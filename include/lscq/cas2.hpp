@@ -197,41 +197,17 @@ inline bool cas2_native(Entry* ptr, Entry& expected, const Entry& desired) noexc
     }
 
     // AArch64:
-    // - Prefer LSE CASP (when enabled for the target).
-    // - Fall back to the compiler's 16-byte atomics lowering (typically LDAXP/STLXP loop).
+    // Let the compiler generate optimal code for 16-byte atomics:
+    // - Uses CASP when compiled with LSE support (-march=armv8.1-a+lse or higher)
+    // - Falls back to LDAXP/STLXP loop otherwise
     //
     // We use seq_cst to match other implementations' semantics.
-    const std::uint64_t expected0_in = expected.cycle_flags;
-    const std::uint64_t expected1_in = expected.index_or_ptr;
-
-#if defined(__ARM_FEATURE_ATOMICS) && !(LSCQ_PLATFORM_WINDOWS && LSCQ_COMPILER_MSVC)
-    std::uint64_t expected0 = expected0_in;
-    std::uint64_t expected1 = expected1_in;
-    const std::uint64_t desired0 = desired.cycle_flags;
-    const std::uint64_t desired1 = desired.index_or_ptr;
-
-    // NOTE: `caspal` returns the observed memory value in the "expected" registers regardless of
-    // success/failure (like other CAS instructions). Success is detected by checking whether the
-    // returned pair equals the original expected pair.
-    __asm__ __volatile__(
-        "dmb ish\n"
-        "caspal %x[expected0], %x[expected1], %x[desired0], %x[desired1], [%x[ptr]]\n"
-        "dmb ish\n"
-        : [expected0] "+r"(expected0), [expected1] "+r"(expected1)
-        : [ptr] "r"(ptr), [desired0] "r"(desired0), [desired1] "r"(desired1)
-        : "cc", "memory");
-
-    expected.cycle_flags = expected0;
-    expected.index_or_ptr = expected1;
-    return (expected0 == expected0_in) && (expected1 == expected1_in);
-#else
     Entry expected_local = expected;
     Entry desired_local = desired;
     const bool ok = __atomic_compare_exchange(ptr, &expected_local, &desired_local, false,
                                               __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     expected = expected_local;
     return ok;
-#endif
 }
 #else
 inline bool cas2_native(Entry* ptr, Entry& expected, const Entry& desired) noexcept {

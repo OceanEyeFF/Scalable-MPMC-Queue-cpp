@@ -5,20 +5,20 @@
  * Uses sleep to reduce output volume for debugging.
  */
 
-#include <lscq/ebr.hpp>
-#include <lscq/lscq.hpp>
-
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <iostream>
+#include <lscq/ebr.hpp>
+#include <lscq/lscq.hpp>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 namespace {
 
-constexpr int NUM_THREADS = 2;  // Test with 2 threads like benchmark
+constexpr int NUM_THREADS = 2;           // Test with 2 threads like benchmark
 constexpr int OPS_PER_THREAD = 1000000;  // Very large number to trigger issue
 constexpr int PREFILL_PER_THREAD = 100;  // Match benchmark prefill
 constexpr std::size_t NODE_SCQSIZE = 4096;
@@ -42,7 +42,7 @@ void debug_print(int thread_id, const char* msg, int extra = -1) {
 }
 
 class CyclicBarrier {
-public:
+   public:
     explicit CyclicBarrier(int parties) : parties_(parties), arrived_(0), generation_(0) {}
 
     void arrive_and_wait() {
@@ -57,7 +57,7 @@ public:
         cv_.wait(lock, [&] { return generation_ != gen; });
     }
 
-private:
+   private:
     int parties_;
     std::size_t arrived_;
     std::size_t generation_;
@@ -85,7 +85,8 @@ int main() {
     const std::uint64_t pool_mask = pool.size() - 1;
 
     // Prefill
-    std::cout << "Prefilling queue with " << (NUM_THREADS * PREFILL_PER_THREAD) << " elements..." << std::endl;
+    std::cout << "Prefilling queue with " << (NUM_THREADS * PREFILL_PER_THREAD) << " elements..."
+              << std::endl;
     for (int i = 0; i < NUM_THREADS * PREFILL_PER_THREAD; ++i) {
         auto* p = &pool[static_cast<std::size_t>(i) & pool_mask];
         if (!q.enqueue(p)) {
@@ -118,7 +119,8 @@ int main() {
 
             std::uint64_t local_seq = static_cast<std::uint64_t>(tid) * 1000000;
 
-            for (int op = 0; op < OPS_PER_THREAD && !stop_flag.load(std::memory_order_relaxed); ++op) {
+            for (int op = 0; op < OPS_PER_THREAD && !stop_flag.load(std::memory_order_relaxed);
+                 ++op) {
                 // Enqueue
                 auto* item = &pool[(local_seq++) & pool_mask];
                 int enq_retries = 0;
@@ -182,7 +184,8 @@ int main() {
     for (auto& t : threads) {
         while (true) {
             auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
+            auto elapsed =
+                std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
 
             if (elapsed > 30) {
                 std::cerr << "\n!!! TIMEOUT after " << elapsed << " seconds !!!" << std::endl;

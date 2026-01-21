@@ -76,3 +76,7 @@ vcpkg_installed/
 Thumbs.db
 desktop.ini
 nul
+
+# Temporary files
+tmpfiles/
+.github\workflows\tmpfiles

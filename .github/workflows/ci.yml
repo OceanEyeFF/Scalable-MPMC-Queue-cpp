@@ -116,9 +116,9 @@ jobs:
             install_cross: false
             toolchain_file: ""
 
-          - name: macOS x64 (clang++) - Debug
-            os: macos-13
-            build_dir: build/ci/matrix/macos-13/Debug
+          - name: macOS (clang++) - Debug (macos-15)
+            os: macos-15
+            build_dir: build/ci/matrix/macos-15/Debug
             config: Debug
             cc: clang
             cxx: clang++

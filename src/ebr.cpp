@@ -1,15 +1,12 @@
-#include <lscq/ebr.hpp>
-
 #include <algorithm>
+#include <lscq/ebr.hpp>
 
 namespace lscq {
 
 thread_local EBRManager::ThreadState* EBRManager::tls_state_ = nullptr;
 thread_local bool EBRManager::tls_initialized_ = false;
 
-EBRManager::EBRManager() {
-    global_epoch_.store(0, std::memory_order_relaxed);
-}
+EBRManager::EBRManager() { global_epoch_.store(0, std::memory_order_relaxed); }
 
 EBRManager::~EBRManager() {
     // Reclaim all pending retired nodes
@@ -128,7 +125,6 @@ void EBRManager::reclaim_generation(std::size_t gen_idx) {
 }
 
 std::size_t EBRManager::try_reclaim() {
-    const std::uint64_t current = global_epoch_.load(std::memory_order_acquire);
     std::size_t reclaimed = 0;
 
     // Try to advance epoch if all threads have caught up
@@ -136,14 +132,14 @@ std::size_t EBRManager::try_reclaim() {
         global_epoch_.fetch_add(1, std::memory_order_release);
     }
 
-    const std::uint64_t new_epoch = global_epoch_.load(std::memory_order_acquire);
+    const std::uint64_t current_epoch = global_epoch_.load(std::memory_order_acquire);
 
     // Reclaim nodes from generations that are safe to delete
-    // A node is safe to delete if its epoch < new_epoch - 2
+    // A node is safe to delete if its epoch < current_epoch - 2
     // With 3 generations, this means we can reclaim the oldest generation
     // when we have advanced at least 2 epochs since the node was retired
-    if (new_epoch >= 2) {
-        const std::uint64_t safe_epoch = new_epoch - 2;
+    if (current_epoch >= 2) {
+        const std::uint64_t safe_epoch = current_epoch - 2;
 
         for (std::size_t i = 0; i < kNumGenerations; ++i) {
             std::vector<RetiredNode> remaining;

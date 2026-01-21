@@ -1,8 +1,7 @@
-#include <lscq/detail/ncq_impl.hpp>
-#include <lscq/ncq.hpp>
-
 #include <cstddef>
 #include <cstdint>
+#include <lscq/detail/ncq_impl.hpp>
+#include <lscq/ncq.hpp>
 #include <new>
 
 namespace lscq {
@@ -79,7 +78,7 @@ bool NCQ<T>::enqueue(T index) {
         if (cycle_e == cycle_t) {
             // Help to move tail.
             (void)tail_.compare_exchange_weak(t, t + 1, std::memory_order_release,
-                                             std::memory_order_relaxed);
+                                              std::memory_order_relaxed);
             continue;
         }
 
@@ -93,7 +92,7 @@ bool NCQ<T>::enqueue(T index) {
         if (lscq::cas2(&entries_[remapped_j], expected, desired)) {
             // Try to move tail.
             (void)tail_.compare_exchange_weak(t, t + 1, std::memory_order_release,
-                                             std::memory_order_relaxed);
+                                              std::memory_order_relaxed);
             return true;
         }
     }
@@ -119,7 +118,7 @@ T NCQ<T>::dequeue() {
         }
 
         if (head_.compare_exchange_weak(h, h + 1, std::memory_order_acq_rel,
-                                       std::memory_order_acquire)) {
+                                        std::memory_order_acquire)) {
             return static_cast<T>(ent.index_or_ptr);
         }
     }
@@ -130,10 +129,8 @@ bool NCQ<T>::is_empty() const noexcept {
     return head_.load(std::memory_order_relaxed) >= tail_.load(std::memory_order_relaxed);
 }
 
-template std::size_t NCQ<std::uint64_t>::cache_remap(std::size_t) const noexcept;
-template std::size_t NCQ<std::uint32_t>::cache_remap(std::size_t) const noexcept;
+}  // namespace lscq
 
+// Explicit instantiations for common types
 template class lscq::NCQ<std::uint64_t>;
 template class lscq::NCQ<std::uint32_t>;
-
-}  // namespace lscq
