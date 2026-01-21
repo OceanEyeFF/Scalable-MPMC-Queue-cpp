@@ -18,9 +18,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup LLVM (clang-format)
-        uses: llvm/actions/setup-llvm@v1
+        uses: KyleMayes/install-llvm-action@v2
         with:
-          llvm-version: "19"
+          version: "19"
 
       - name: clang-format --dry-run --Werror
         shell: bash
@@ -164,9 +164,9 @@ jobs:
 
       - name: Setup LLVM (clang toolchain)
         if: ${{ matrix.setup_llvm }}
-        uses: llvm/actions/setup-llvm@v1
+        uses: KyleMayes/install-llvm-action@v2
         with:
-          llvm-version: "19"
+          version: "19"
 
       - name: Setup MSVC dev cmd
         if: ${{ matrix.setup_msvc }}
@@ -252,9 +252,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup LLVM (clang/clang++)
-        uses: llvm/actions/setup-llvm@v1
+        uses: KyleMayes/install-llvm-action@v2
         with:
-          llvm-version: "19"
+          version: "19"
 
       - name: Install Ninja
         run: |
