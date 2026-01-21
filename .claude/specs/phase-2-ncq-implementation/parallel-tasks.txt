@@ -1,0 +1,539 @@
+---TASK---
+id: task-1
+type: default
+backend: codex
+workdir: e:\gitee\Scaleable-MPMC-Queue-cpp
+---CONTENT---
+# Task 1: NCQ 公共 API 声明与配置常量
+
+## 目标
+在配置头文件中添加队列大小常量，创建 NCQ 类模板的公共接口声明，包含构造函数、enqueue/dequeue 方法及必要的 Doxygen 文档注释。
+
+## 文件范围
+- `include/lscq/config.hpp` (修改：添加 `DEFAULT_SCQSIZE=65536`, `DEFAULT_QSIZE=32768`)
+- `include/lscq/ncq.hpp` (新建：声明 `template<class T> class NCQ`)
+- `include/lscq/lscq.hpp` (可选：添加 NCQ 相关引用)
+
+## 详细要求
+
+### 1. config.hpp 修改
+添加以下常量到 `lscq::config` 命名空间或作为 constexpr：
+```cpp
+namespace lscq {
+namespace config {
+    constexpr std::size_t DEFAULT_SCQSIZE = 65536;  // NCQ/SCQ 队列大小
+    constexpr std::size_t DEFAULT_QSIZE = 32768;    // 通用队列大小
+}
+}
+```
+
+### 2. ncq.hpp 新建
+创建 NCQ 类模板声明，包含：
+- Entry 类型别名（复用 `lscq::Entry` 从 cas2.hpp）
+- 构造函数：`NCQ(std::size_t capacity = config::DEFAULT_SCQSIZE)`
+- 析构函数：`~NCQ()` (声明为 virtual，为 Phase 3 SCQ 继承预留)
+- 公共方法：
+  - `bool enqueue(T index)` - 入队操作
+  - `T dequeue()` - 出队操作，返回索引或特殊值表示空队列
+  - `bool is_empty() const` - 检查队列是否为空
+- 私有成员：
+  - `Entry* entries_` - 队列槽位数组
+  - `std::size_t capacity_` - 队列容量
+  - `alignas(64) std::atomic<uint64_t> head_` - 头指针
+  - `alignas(64) std::atomic<uint64_t> tail_` - 尾指针
+
+### 3. Doxygen 文档要求
+每个公共方法必须包含：
+- `@brief` - 简要说明
+- `@param` - 参数说明（如适用）
+- `@return` - 返回值说明
+- `@note` - 线程安全性说明、使用约束等
+
+示例：
+```cpp
+/**
+ * @brief 将元素索引入队到循环队列
+ *
+ * @param index 要入队的元素索引
+ * @return true 成功入队，false 队列已满
+ * @note 此方法是线程安全的，支持并发调用
+ */
+bool enqueue(T index);
+```
+
+### 4. 代码风格
+- 遵循 Google C++ Style Guide (项目使用 clang-format)
+- 头文件保护使用 `#ifndef LSCQ_NCQ_HPP_` 格式
+- 命名空间使用 `lscq`
+
+## 验收标准
+- [ ] 编译通过，无警告 (clang-cl -Werror)
+- [ ] 头文件包含链路正确（可以被其他模块 `#include <lscq/ncq.hpp>` 引用）
+- [ ] 配置常量可以在其他模块中访问（例如 `lscq::config::DEFAULT_SCQSIZE`）
+- [ ] 所有公共 API 有完整 Doxygen 注释
+
+## 测试命令
+```powershell
+cmake --preset windows-clang-debug
+cmake --build build/debug
+ctest --test-dir build/debug --output-on-failure
+```
+
+## 参考
+- Phase 1 CAS2 API: `include/lscq/cas2.hpp` (Entry 结构定义)
+- Phase 1 config: `include/lscq/config.hpp` (现有配置常量模式)
+---TASK---
+id: task-2
+type: default
+backend: codex
+workdir: e:\gitee\Scaleable-MPMC-Queue-cpp
+dependencies: task-1
+---CONTENT---
+# Task 2: NCQ 核心算法实现与原子加载
+
+## 目标
+实现 NCQ 的 enqueue/dequeue/cache_remap 核心逻辑，遵循论文 Figure 5 控制流；添加 TSan 安全的 entry_load 辅助函数；处理 Entry 结构布局映射；实现内存分配和 RAII 析构。
+
+## 文件范围
+- `src/ncq.cpp` (新建：实现文件)
+- `include/lscq/detail/ncq_impl.hpp` (可选：辅助函数)
+- 显式模板实例化：`uint64_t`, `uint32_t`
+
+## 详细要求
+
+### 1. Entry 结构布局映射
+复用 Phase 1 的 `lscq::Entry` (16 字节对齐，两个 uint64_t 字段)：
+- `cycle_flags` 字段存储 cycle 计数（NCQ 使用低位）
+- `index_or_ptr` 字段存储元素索引
+
+确保：
+```cpp
+static_assert(sizeof(Entry) == 16);
+static_assert(alignof(Entry) == 16);
+```
+
+### 2. 内存分配（64 字节对齐）
+构造函数中使用 RAII 分配 Entry 数组：
+```cpp
+auto entries = std::unique_ptr<Entry[], decltype(&operator delete[])>(
+    static_cast<Entry*>(::operator new[](capacity * sizeof(Entry), std::align_val_t(64))),
+    [](Entry* p) { ::operator delete[](p, std::align_val_t(64)); }
+);
+
+// 初始化所有槽位
+for (size_t i = 0; i < capacity; ++i) {
+    new (&entries[i]) Entry{0, 0};  // placement new
+}
+```
+
+析构函数中自动释放（通过 unique_ptr）。
+
+### 3. TSan 安全的原子 Entry 加载
+实现 `entry_load` 辅助函数，避免数据竞争：
+```cpp
+Entry entry_load(Entry* ptr) {
+    Entry expected = {0, 0};
+    lscq::cas2(ptr, expected, expected);  // 不修改值，触发原子语义
+    return expected;  // expected 被更新为实际值
+}
+```
+
+### 4. cache_remap 算法
+实现缓存优化映射函数：
+```cpp
+constexpr size_t CACHE_LINE_SIZE = 64;
+constexpr size_t ENTRIES_PER_LINE = CACHE_LINE_SIZE / sizeof(Entry);  // 4
+
+size_t cache_remap(size_t idx) const {
+    size_t line = idx / ENTRIES_PER_LINE;
+    size_t offset = idx % ENTRIES_PER_LINE;
+    size_t num_lines = capacity_ / ENTRIES_PER_LINE;
+    return offset * num_lines + line;
+}
+```
+
+### 5. enqueue 实现（遵循 Figure 5）
+算法流程：
+1. 循环：读取 tail (`t = tail_.load()`)
+2. 计算 cycle: `cycle_t = t / capacity_`
+3. 计算索引: `j = t % capacity_`
+4. remap: `remapped_j = cache_remap(j)`
+5. 原子读取槽位: `ent = entry_load(&entries_[remapped_j])`
+6. 检查 cycle:
+   - 如果 `ent.cycle_flags == cycle_t`: "help move tail"，CAS tail 到 `t+1`，重试
+   - 如果 `ent.cycle_flags < cycle_t`: 可以入队
+   - 否则：tail 过期，重试
+7. CAS2 更新槽位: `cas2(&entries_[remapped_j], ent, {cycle_t, index})`
+8. 如果成功：CAS tail 到 `t+1`，返回 true
+9. 如果失败：重试
+
+### 6. dequeue 实现（遵循 Figure 5）
+算法流程：
+1. 循环：读取 head (`h = head_.load()`)
+2. 计算 cycle: `cycle_h = h / capacity_`
+3. 计算索引: `j = h % capacity_`
+4. remap: `remapped_j = cache_remap(j)`
+5. 原子读取槽位: `ent = entry_load(&entries_[remapped_j])`
+6. 检查 cycle:
+   - 如果 `ent.cycle_flags == cycle_h + 1`: 返回特殊值（队列空）
+   - 如果 `ent.cycle_flags < cycle_h + 1`: CAS head 到 `h+1`，重试
+   - 否则：head 过期，重试
+7. CAS head 到 `h+1`
+8. 如果成功：返回 `ent.index_or_ptr`
+9. 如果失败：重试
+
+### 7. 显式模板实例化
+在 `src/ncq.cpp` 末尾添加：
+```cpp
+template class lscq::NCQ<std::uint64_t>;
+template class lscq::NCQ<std::uint32_t>;
+```
+
+## 验收标准
+- [ ] `enqueue(T)` 和 `dequeue()` 实现遵循 Figure 5 伪代码
+- [ ] `cache_remap(size_t)` 公式正确
+- [ ] `entry_load(Entry*)` 使用 CAS2 模式实现原子读取
+- [ ] Entry 结构字段映射正确 (cycle→cycle_flags, index→index_or_ptr)
+- [ ] 内存分配 64 字节对齐，析构时正确释放
+- [ ] 显式模板实例化 uint64_t 和 uint32_t
+- [ ] 单线程功能测试通过
+- [ ] ThreadSanitizer 检测零数据竞争
+
+## 测试命令
+```powershell
+# Windows Debug 构建
+cmake --preset windows-clang-debug
+cmake --build build/debug
+ctest --test-dir build/debug --output-on-failure
+
+# Linux TSan 验证（CI 环境）
+cmake -B build/tsan -DCMAKE_CXX_FLAGS="-fsanitize=thread -g"
+cmake --build build/tsan
+ctest --test-dir build/tsan --output-on-failure
+```
+
+## 参考
+- 论文 Figure 5: NCQ enqueue/dequeue 伪代码
+- Phase 1 CAS2 API: `include/lscq/cas2.hpp` (`bool cas2(Entry*, Entry&, const Entry&)`)
+- Phase 1 测试模式: `tests/unit/test_cas2.cpp` (并发测试 spin barrier 模式)
+---TASK---
+id: task-3
+type: default
+backend: codex
+workdir: e:\gitee\Scaleable-MPMC-Queue-cpp
+dependencies: task-2
+---CONTENT---
+# Task 3: 单元测试与代码覆盖率
+
+## 目标
+编写 NCQ 的全面单元测试套件，包含基础操作、FIFO 顺序、并发入队、并发生产-消费(4P4C×10000)、cycle 回绕等测试组；配置代码覆盖率收集(llvm-cov)，确保 ≥90% 行覆盖率。
+
+## 文件范围
+- `tests/unit/test_ncq.cpp` (新建)
+- `tests/CMakeLists.txt` (修改：添加测试目标)
+
+## 详细要求
+
+### 1. 测试套件结构
+创建以下测试组（使用 Google Test）：
+
+#### BasicOperation
+- 单线程 enqueue 100 元素 → dequeue 100 元素
+- 验证 FIFO 顺序（出队顺序与入队顺序一致）
+- 验证返回值正确（enqueue 返回 true，dequeue 返回正确索引）
+
+#### FIFO_Order
+- 插入 1000 个连续整数 (0, 1, 2, ..., 999)
+- 验证出队顺序严格递增
+- 使用 EXPECT_EQ 断言每个元素
+
+#### EdgeCases
+- 队列满时 enqueue 失败（需要预先填满队列）
+- 空队列 dequeue 返回特殊值（例如 UINT64_MAX 或 0）
+- 构造函数参数验证（容量为 0 或非法值）
+
+#### ConcurrentEnqueue
+- 8 线程同时入队，每个线程入队 10000 个元素
+- 使用 spin barrier 同步启动（参考 Phase 1 test_cas2.cpp）
+- 验证总量正确（8 × 10000 = 80000 个元素）
+- 验证无重复/丢失（使用 set 或 bitset 检查）
+
+#### ConcurrentEnqueueDequeue
+- 4 生产者线程，每个入队 10000 次
+- 4 消费者线程，每个出队直到队列空
+- 使用 spin barrier 同步启动
+- 验证总量守恒（入队总数 = 出队总数）
+- 验证无重复元素（消费者使用 thread-local set 记录）
+
+#### CycleWrap
+- 模拟 cycle 计数器接近溢出场景
+- 手动设置高初始值（例如 `tail_ = UINT64_MAX - 1000`）
+- 执行 2000 次 enqueue/dequeue 操作
+- 验证 cycle 溢出后队列仍正常工作
+
+### 2. Spin Barrier 并发测试模式
+参考 Phase 1 `test_cas2.cpp` 的模式：
+```cpp
+std::atomic<size_t> ready{0};
+std::atomic<bool> start{false};
+std::vector<std::thread> threads;
+
+for (size_t i = 0; i < num_threads; ++i) {
+    threads.emplace_back([&, tid = i]() {
+        ready.fetch_add(1, std::memory_order_relaxed);
+        while (!start.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        // 执行测试操作...
+    });
+}
+
+while (ready.load(std::memory_order_acquire) < num_threads) {
+    std::this_thread::yield();
+}
+start.store(true, std::memory_order_release);
+
+for (auto& t : threads) t.join();
+```
+
+### 3. 代码覆盖率配置
+在 `tests/CMakeLists.txt` 中添加覆盖率支持：
+- 使用 `--coverage` 或 `-fprofile-instr-generate -fcoverage-mapping` (LLVM)
+- 确保覆盖 NCQ 的所有分支：
+  - enqueue 成功/失败路径
+  - dequeue 成功/空队列路径
+  - cache_remap 计算
+  - entry_load 调用
+
+### 4. 覆盖率测量流程
+```powershell
+# 编译时添加覆盖率标志
+cmake --preset windows-clang-debug -DCMAKE_CXX_FLAGS="--coverage -fprofile-instr-generate -fcoverage-mapping"
+cmake --build build/debug
+
+# 运行测试生成 profraw 文件
+$env:LLVM_PROFILE_FILE="coverage-%p.profraw"
+ctest --test-dir build/debug
+
+# 合并 profraw 文件
+llvm-profdata merge -sparse coverage-*.profraw -o coverage.profdata
+
+# 生成报告
+llvm-cov report .\build\debug\tests\lscq_unit_tests.exe -instr-profile=coverage.profdata
+llvm-cov show .\build\debug\tests\lscq_unit_tests.exe -instr-profile=coverage.profdata -format=html -output-dir=coverage_html
+```
+
+## 验收标准
+- [ ] 至少 6 个测试组 (BasicOperation, FIFO_Order, EdgeCases, ConcurrentEnqueue, ConcurrentEnqueueDequeue, CycleWrap)
+- [ ] 4P4C×10000 并发测试无数据丢失/重复
+- [ ] llvm-cov 报告覆盖率 ≥90% (针对 NCQ 核心代码)
+- [ ] ctest 输出显示所有测试 PASSED
+- [ ] ThreadSanitizer 零数据竞争（Linux CI 验证）
+- [ ] AddressSanitizer 零内存泄漏
+
+## 测试命令
+```powershell
+# 功能测试
+cmake --preset windows-clang-debug
+cmake --build build/debug
+ctest --test-dir build/debug --output-on-failure --verbose
+
+# 代码覆盖率
+cmake --preset windows-clang-debug -DCMAKE_CXX_FLAGS="--coverage -fprofile-instr-generate -fcoverage-mapping"
+cmake --build build/debug
+$env:LLVM_PROFILE_FILE="coverage-%p.profraw"
+ctest --test-dir build/debug
+llvm-profdata merge -sparse coverage-*.profraw -o coverage.profdata
+llvm-cov report .\build\debug\tests\lscq_unit_tests.exe -instr-profile=coverage.profdata
+```
+
+## 参考
+- Phase 1 测试模式: `tests/unit/test_cas2.cpp` (spin barrier, CAS 并发测试)
+- Google Test 文档: https://google.github.io/googletest/
+- LLVM Code Coverage: https://clang.llvm.org/docs/SourceBasedCodeCoverage.html
+---TASK---
+id: task-4
+type: default
+backend: codex
+workdir: e:\gitee\Scaleable-MPMC-Queue-cpp
+dependencies: task-2
+---CONTENT---
+# Task 4: 性能基准测试与 MSQueue 对比
+
+## 目标
+实现 NCQ 的 pair benchmark (1/2/4/8/16 线程配对测试)，测量吞吐量 (Mops/sec)；实现简化版 Michael-Scott Queue 作为基准线；计算 NCQ 与 MSQueue 的性能差距，验证 G3.2 (单线程 >5 Mops/sec) 和 G3.4 (gap <50%) 目标。
+
+## 文件范围
+- `benchmarks/benchmark_ncq.cpp` (新建或扩展现有 benchmark 文件)
+- `include/lscq/msqueue.hpp` + `src/msqueue.cpp` (MSQueue 实现)
+- `benchmarks/CMakeLists.txt` (修改：添加编译目标)
+
+## 详细要求
+
+### 1. NCQ Pair Benchmark
+使用 Google Benchmark 框架实现对称生产者-消费者配对测试：
+
+#### 线程配置
+- 1 线程 (1 生产者)
+- 2 线程 (1P + 1C)
+- 4 线程 (2P + 2C)
+- 8 线程 (4P + 4C)
+- 16 线程 (8P + 8C)
+
+#### 测试模式
+- **Pair 模式**: 对称配对，每对线程执行 1000000 次操作
+- 生产者线程：循环 enqueue(i)
+- 消费者线程：循环 dequeue()
+- 测量吞吐量（百万操作/秒，Mops/sec）
+
+### 2. MSQueue 简化实现
+实现标准 Michael-Scott Queue (仅支持 enqueue/dequeue)：
+
+#### 数据结构
+```cpp
+template<class T>
+class MSQueue {
+    struct Node {
+        T data;
+        std::atomic<Node*> next;
+    };
+    alignas(64) std::atomic<Node*> head_;
+    alignas(64) std::atomic<Node*> tail_;
+
+public:
+    MSQueue();
+    ~MSQueue();  // 析构时回收所有节点
+    bool enqueue(const T& value);
+    bool dequeue(T& value);
+};
+```
+
+#### 实现要点
+- **构造函数**: 分配 dummy node, head_ = tail_ = dummy
+- **enqueue**: 标准 M&S 算法（CAS tail, CAS tail->next）
+- **dequeue**: 标准 M&S 算法（CAS head）
+- **析构函数**: 等待所有线程停止后，遍历链表释放所有节点（避免 ASan 泄漏报告）
+
+#### ABA 问题处理
+- 简化方案：依赖 C++ 指针 CAS 的语义（现代 64-bit 系统 ABA 概率极低）
+- 可选：使用 tagged pointer (高位作为计数器)
+
+### 3. 性能对比测试
+为 MSQueue 实现相同的 Pair benchmark
+
+### 4. 性能指标计算
+在 benchmark 输出或单独脚本中计算：
+- 单线程 NCQ 吞吐量 (Mops/sec)
+- 各线程配置下 NCQ vs MSQueue 的性能差距 (gap %)
+- 公式：`gap = (MSQueue_throughput - NCQ_throughput) / MSQueue_throughput * 100%`
+
+### 5. 输出格式
+使用 Google Benchmark 的标准输出格式，包含：
+- 平均吞吐量（Mops/sec）
+- CPU 时间、墙钟时间
+- 迭代次数
+- 可选：生成 CSV 或 JSON 用于图表绘制
+
+## 验收标准
+- [ ] NCQ pair benchmark 实现 1/2/4/8/16 线程配置
+- [ ] MSQueue 实现通过基础正确性测试（单线程 FIFO，并发无死锁）
+- [ ] 单线程 NCQ ≥5 Mops/sec (G3.2)
+- [ ] NCQ vs MSQueue gap <50% (G3.4)
+- [ ] benchmark 输出包含吞吐量、CPU 时间、迭代次数
+- [ ] MSQueue 析构时正确释放所有节点（ASan 零泄漏）
+
+## 运行命令
+```powershell
+cmake --preset windows-clang-release
+cmake --build build/release --config Release
+.\build\release\benchmarks\lscq_benchmarks.exe --benchmark_filter=NCQ
+.\build\release\benchmarks\lscq_benchmarks.exe --benchmark_filter=MSQueue
+```
+
+## 参考
+- 论文: Michael & Scott, "Simple, Fast, and Practical Non-Blocking and Blocking Concurrent Queue Algorithms", PODC 1996
+- Phase 1 benchmark: `benchmarks/benchmark_cas2.cpp` (Google Benchmark 用法)
+- Google Benchmark 文档: https://github.com/google/benchmark
+---TASK---
+id: task-5
+type: default
+backend: codex
+workdir: e:\gitee\Scaleable-MPMC-Queue-cpp
+dependencies: task-3, task-4
+---CONTENT---
+# Task 5: Phase 2 交接文档与 API 文档
+
+## 目标
+编写完整的 Phase 2 交接文档 (≥300 行，9 个必需章节)，包含实现总结、代码索引、算法验证结果、性能数据、已知问题、Phase 3 接口预留、快速启动指南、经验教训和附录；补充 NCQ 类公共接口的 Doxygen 注释。
+
+## 文件范围
+- `docs/Phase2-交接文档.md` (新建)
+- `include/lscq/ncq.hpp` (增强 Doxygen 注释)
+- `include/lscq/config.hpp` (为新常量添加文档)
+
+## 详细要求
+
+### 1. 文档结构（9 个必需章节）
+
+#### 第1章：完成情况概览
+- 列出已完成的功能点（NCQ 核心算法、cache_remap、TSan 安全等）
+- 通过的测试（单元测试组名称、覆盖率百分比）
+- 性能指标达成情况（单线程吞吐量、gap 百分比）
+- 使用 checkbox 标记完成状态（✅ 已完成，❌ 未完成）
+
+#### 第2章：关键代码位置索引
+使用表格格式列出关键文件路径、符号和说明
+
+#### 第3章：NCQ 算法验证结果
+##### 3.1 单元测试
+- 列出所有测试组及通过状态
+##### 3.2 Sanitizer 报告
+- ThreadSanitizer 和 AddressSanitizer 结果
+##### 3.3 代码覆盖率
+- 总体覆盖率和 NCQ 核心代码覆盖率
+
+#### 第4章：性能 Benchmark 结果
+##### 4.1 吞吐量表格
+- 包含 NCQ、MSQueue 吞吐量和 Gap 百分比
+##### 4.2 性能分析
+- 是否达到性能目标的分析
+
+#### 第5章：已知问题和限制
+- 列出当前实现的限制和未解决的问题
+
+#### 第6章：Phase 3 接口预留
+- 为 SCQ 继承预留的扩展点
+
+#### 第7章：下阶段快速启动指南
+- 提供 PowerShell 命令用于构建、测试、benchmark
+
+#### 第8章：经验教训和最佳实践
+- TSan、CAS2、并发测试的经验总结
+
+#### 第9章：附录
+- 参考文献、性能数据、CI 配置说明
+
+### 2. Doxygen 注释增强
+确保所有公共方法有完整注释（@brief, @param, @return, @note）
+
+### 3. 行数验证
+确保文档 ≥300 行（不含空行）
+
+## 验收标准
+- [ ] 文档存在且 ≥300 行
+- [ ] 包含全部 9 个必需章节
+- [ ] 性能数据表格完整
+- [ ] 代码索引列出至少 8 个关键文件/函数
+- [ ] NCQ 类公共 API 有完整 Doxygen 注释
+- [ ] 文档中验证性能指标 G3.2 和 G3.4
+- [ ] 包含 TSan/ASan 命令和输出摘要
+- [ ] 快速启动指南包含 5+ 条可执行命令
+
+## 验证命令
+```powershell
+Get-Content docs/Phase2-交接文档.md | Measure-Object -Line
+```
+
+## 参考
+- Phase 1 交接文档: `docs/Phase1-交接文档.md` (章节结构、格式参考)
+- dev-plan.md: `.claude/specs/phase-2-ncq-implementation/dev-plan.md` (技术备注提取)

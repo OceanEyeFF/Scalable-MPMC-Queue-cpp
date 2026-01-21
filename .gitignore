@@ -1,0 +1,78 @@
+# Build artifacts
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+CMakeUserPresets.json
+
+# CMake dependency dirs (often under build trees)
+_deps/
+**/_deps/
+
+# Compiled object files / libraries
+*.o
+*.obj
+*.ko
+*.elf
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.la
+*.lo
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Tests / coverage
+Testing/
+coverage/
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+
+# Benchmarks / performance outputs
+benchmarks/out/
+benchmarks/results/*.csv
+benchmarks/results/*.json
+performance_data/
+
+# Documentation build outputs (e.g., Doxygen/Sphinx)
+docs/html/
+docs/latex/
+docs/xml/
+
+# Package manager outputs
+conan_cache/
+vcpkg_installed/
+
+# System files
+Thumbs.db
+desktop.ini
+nul

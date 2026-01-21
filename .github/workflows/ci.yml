@@ -1,0 +1,289 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Format (clang-format)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup LLVM (clang-format)
+        uses: llvm/actions/setup-llvm@v1
+        with:
+          llvm-version: "19"
+
+      - name: clang-format --dry-run --Werror
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+
+          patterns = [
+              "include/**/*.hpp",
+              "src/**/*.cpp",
+              "tests/**/*.cpp",
+          ]
+          files = (
+              subprocess.check_output(["git", "ls-files", *patterns], text=True)
+              .splitlines()
+          )
+          if not files:
+              raise SystemExit("No source files matched for clang-format check.")
+
+          subprocess.check_call(["clang-format", "--version"])
+          subprocess.check_call(["clang-format", "--dry-run", "--Werror", *files])
+          print(f"clang-format OK ({len(files)} files).")
+          PY
+
+  build-matrix:
+    name: Build/Test - ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    needs: [format]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 5 platforms × multiple compilers:
+          # - Windows x64 (clang-cl)
+          # - Linux x64 (gcc/clang)
+          # - macOS x64 (macos-13)
+          # - macOS ARM64 (macos-14)
+          # - Linux ARM64 (cross compile validation only)
+          - name: Windows x64 (clang-cl) - Debug
+            os: windows-latest
+            build_dir: build/ci/matrix/windows/Debug
+            config: Debug
+            cc: clang-cl
+            cxx: clang-cl
+            enable_sanitizers: ON
+            build_tests: ON
+            run_tests: true
+            setup_llvm: true
+            setup_msvc: true
+            install_cross: false
+            toolchain_file: ""
+
+          - name: Windows x64 (clang-cl) - Release
+            os: windows-latest
+            build_dir: build/ci/matrix/windows/Release
+            config: Release
+            cc: clang-cl
+            cxx: clang-cl
+            enable_sanitizers: OFF
+            build_tests: ON
+            run_tests: true
+            setup_llvm: true
+            setup_msvc: true
+            install_cross: false
+            toolchain_file: ""
+
+          - name: Linux x64 (g++) - Debug
+            os: ubuntu-latest
+            build_dir: build/ci/matrix/linux/gcc/Debug
+            config: Debug
+            cc: gcc
+            cxx: g++
+            enable_sanitizers: OFF
+            build_tests: ON
+            run_tests: true
+            setup_llvm: false
+            setup_msvc: false
+            install_cross: false
+            toolchain_file: ""
+
+          - name: Linux x64 (clang++) - Debug
+            os: ubuntu-latest
+            build_dir: build/ci/matrix/linux/clang/Debug
+            config: Debug
+            cc: clang
+            cxx: clang++
+            enable_sanitizers: OFF
+            build_tests: ON
+            run_tests: true
+            setup_llvm: true
+            setup_msvc: false
+            install_cross: false
+            toolchain_file: ""
+
+          - name: macOS x64 (clang++) - Debug
+            os: macos-13
+            build_dir: build/ci/matrix/macos-13/Debug
+            config: Debug
+            cc: clang
+            cxx: clang++
+            enable_sanitizers: OFF
+            build_tests: ON
+            run_tests: true
+            setup_llvm: false
+            setup_msvc: false
+            install_cross: false
+            toolchain_file: ""
+
+          - name: macOS ARM64 (clang++) - Debug
+            os: macos-14
+            build_dir: build/ci/matrix/macos-14/Debug
+            config: Debug
+            cc: clang
+            cxx: clang++
+            enable_sanitizers: OFF
+            build_tests: ON
+            run_tests: true
+            setup_llvm: false
+            setup_msvc: false
+            install_cross: false
+            toolchain_file: ""
+
+          - name: Linux ARM64 (aarch64 cross) - Debug (build-only)
+            os: ubuntu-latest
+            build_dir: build/ci/matrix/linux/aarch64/Debug
+            config: Debug
+            cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
+            enable_sanitizers: OFF
+            build_tests: OFF
+            run_tests: false
+            setup_llvm: false
+            setup_msvc: false
+            install_cross: true
+            toolchain_file: cmake/toolchains/aarch64-linux-gnu.cmake
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup LLVM (clang toolchain)
+        if: ${{ matrix.setup_llvm }}
+        uses: llvm/actions/setup-llvm@v1
+        with:
+          llvm-version: "19"
+
+      - name: Setup MSVC dev cmd
+        if: ${{ matrix.setup_msvc }}
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
+      - name: Install aarch64 cross compiler
+        if: ${{ matrix.install_cross }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Configure (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $buildDir = "${{ matrix.build_dir }}"
+          cmake -S . -B $buildDir -G Ninja `
+            -DCMAKE_BUILD_TYPE=${{ matrix.config }} `
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} `
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} `
+            -DLSCQ_ENABLE_SANITIZERS=${{ matrix.enable_sanitizers }} `
+            -DLSCQ_BUILD_TESTS=${{ matrix.build_tests }} `
+            -DLSCQ_BUILD_BENCHMARKS=OFF `
+            -DLSCQ_BUILD_EXAMPLES=OFF
+
+      - name: Configure (Linux/macOS)
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain_arg=""
+          if [ -n "${{ matrix.toolchain_file }}" ]; then
+            toolchain_arg="-DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain_file }}"
+          fi
+
+          cmake -S . -B "${{ matrix.build_dir }}" -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DLSCQ_ENABLE_SANITIZERS=${{ matrix.enable_sanitizers }} \
+            -DLSCQ_BUILD_TESTS=${{ matrix.build_tests }} \
+            -DLSCQ_BUILD_BENCHMARKS=OFF \
+            -DLSCQ_BUILD_EXAMPLES=OFF \
+            ${toolchain_arg}
+
+      - name: Build (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          cmake --build "${{ matrix.build_dir }}"
+
+      - name: Build (Linux/macOS)
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build "${{ matrix.build_dir }}"
+
+      - name: Test (Windows)
+        if: ${{ runner.os == 'Windows' && matrix.run_tests }}
+        shell: pwsh
+        run: |
+          ctest --test-dir "${{ matrix.build_dir }}" --output-on-failure
+
+      - name: Test (Linux/macOS)
+        if: ${{ runner.os != 'Windows' && matrix.run_tests }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir "${{ matrix.build_dir }}" --output-on-failure
+
+  linux-sanitizers:
+    name: Linux (clang++) - ASan/TSan
+    runs-on: ubuntu-latest
+    needs: [format]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup LLVM (clang/clang++)
+        uses: llvm/actions/setup-llvm@v1
+        with:
+          llvm-version: "19"
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: ASan (LSCQ_ENABLE_SANITIZERS=ON)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/ci/linux/asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DLSCQ_ENABLE_SANITIZERS=ON
+          cmake --build build/ci/linux/asan
+          ctest --test-dir build/ci/linux/asan --output-on-failure
+
+      - name: TSan (CMAKE_*_FLAGS=-fsanitize=thread)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/ci/linux/tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DLSCQ_ENABLE_SANITIZERS=OFF \
+            -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+          cmake --build build/ci/linux/tsan
+          ctest --test-dir build/ci/linux/tsan --output-on-failure

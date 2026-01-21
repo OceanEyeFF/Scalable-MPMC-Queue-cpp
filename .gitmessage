@@ -1,0 +1,35 @@
+# <type>(<scope>): <subject>
+#
+# Types:
+#   feat     A new feature
+#   fix      A bug fix
+#   docs     Documentation changes
+#   style    Formatting-only changes (no logic)
+#   refactor Code change that neither fixes a bug nor adds a feature
+#   perf     Performance improvement
+#   test     Adding or fixing tests
+#   chore    Build/CI/tooling or other maintenance
+#
+# Scope:
+#   Optional. Use a short area name (e.g., queue, cmake, ci, docs, benchmarks).
+#
+# Subject:
+#   - Imperative mood ("add", "fix", "update")
+#   - Keep it concise (aim for <= 50 chars)
+#   - No trailing period
+#
+# Body (optional):
+#   - Explain what and why, not how
+#   - Wrap at ~72 chars per line
+#
+# Footer (optional):
+#   - Reference issues/PRs (e.g., "Closes #123")
+#   - Mark breaking changes with "BREAKING CHANGE:"
+#
+# Example:
+#   feat(queue): add backoff strategy
+#
+#   Explain motivation and high-level approach.
+#
+#   BREAKING CHANGE: rename try_pop to pop_try
+#   Closes #123

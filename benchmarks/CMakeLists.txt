@@ -1,0 +1,85 @@
+add_executable(lscq_benchmarks
+  benchmark_main.cpp
+  benchmark_smoke.cpp
+  benchmark_pair.cpp
+  benchmark_mixed.cpp
+  benchmark_empty.cpp
+  benchmark_memory.cpp
+)
+
+target_link_libraries(lscq_benchmarks
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    benchmark::benchmark
+)
+
+set_target_properties(lscq_benchmarks PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET lscq_benchmarks POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:lscq_benchmarks>"
+  )
+endif()
+
+add_executable(benchmark_cas2
+  benchmark_cas2.cpp
+)
+
+target_link_libraries(benchmark_cas2
+  PRIVATE
+    lscq::lscq
+    benchmark::benchmark_main
+)
+
+set_target_properties(benchmark_cas2 PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET benchmark_cas2 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_cas2>"
+  )
+endif()
+
+# Simplified LSCQ benchmark for debugging
+add_executable(benchmark_lscq_simple
+  benchmark_lscq_simple.cpp
+)
+
+target_link_libraries(benchmark_lscq_simple
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    benchmark::benchmark
+)
+
+set_target_properties(benchmark_lscq_simple PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+# Independent stress test suite for 70E30D scenarios
+# Only unbounded queues (MSQueue, LSCQ) are suitable for high enqueue pressure
+add_executable(benchmark_stress
+  benchmark_main.cpp
+  benchmark_stress.cpp
+)
+
+target_link_libraries(benchmark_stress
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    benchmark::benchmark
+)
+
+set_target_properties(benchmark_stress PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET benchmark_stress POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_stress>"
+  )
+endif()
