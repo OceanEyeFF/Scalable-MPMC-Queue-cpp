@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <lscq/ebr.hpp>
-#include <lscq/lscq.hpp>
-
 #include <atomic>
 #include <cstdint>
+#include <lscq/ebr.hpp>
+#include <lscq/lscq.hpp>
 #include <thread>
 #include <vector>
 

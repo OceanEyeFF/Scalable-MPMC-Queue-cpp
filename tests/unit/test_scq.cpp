@@ -122,7 +122,8 @@ TEST(SCQ_EdgeCases, DequeueOnEmptyReturnsSentinel) {
 TEST(SCQ_EdgeCases, EnqueueSpinsWhenQueueIsFullUntilADequeueFreesSpace) {
     lscq::SCQ<std::uint64_t> q(64);
 
-    // Fill the queue completely: enqueue uses bottom_ as the empty marker, so any value < bottom_ is valid.
+    // Fill the queue completely: enqueue uses bottom_ as the empty marker, so any value < bottom_
+    // is valid.
     for (std::size_t i = 0; i < q.scqsize_; ++i) {
         ASSERT_TRUE(q.enqueue(1u));
     }
@@ -181,7 +182,8 @@ TEST(SCQ_Concurrent, ProducersConsumers16x16_1M_NoLossNoDup_Conservative) {
     for (std::size_t c = 0; c < kConsumers; ++c) {
         threads.emplace_back([&]() {
             gate.arrive_and_wait();
-            while (consumed.load(std::memory_order_relaxed) < kTotal && err.ok.load(std::memory_order_relaxed)) {
+            while (consumed.load(std::memory_order_relaxed) < kTotal &&
+                   err.ok.load(std::memory_order_relaxed)) {
                 const auto v = q.dequeue();
                 if (v == lscq::SCQ<std::uint64_t>::kEmpty) {
                     std::this_thread::yield();
@@ -222,7 +224,8 @@ TEST(SCQ_Stress, ThresholdExhaustionThenBurstEnqueue_AllThreadsEnqueue) {
     constexpr std::uint64_t kBurst = 500u;
     constexpr std::uint64_t kTotal = kEnqueueThreads * kBurst;
 
-    // Ensure all enqueued values are < bottom_ and the ring can hold the whole burst without blocking.
+    // Ensure all enqueued values are < bottom_ and the ring can hold the whole burst without
+    // blocking.
     lscq::SCQ<std::uint64_t> q(1u << 16);  // 65,536
     ASSERT_GT(q.bottom_, kTotal);
     ASSERT_GE(q.scqsize_, static_cast<std::size_t>(kTotal));
@@ -247,9 +250,11 @@ TEST(SCQ_Stress, ThresholdExhaustionThenBurstEnqueue_AllThreadsEnqueue) {
     }
 
     const auto tail_after = q.tail_.load(std::memory_order_relaxed);
-    EXPECT_GT(tail_after, initial_tail) << "expected fixState to advance tail on empty dequeue storm";
+    EXPECT_GT(tail_after, initial_tail)
+        << "expected fixState to advance tail on empty dequeue storm";
 
-    // Phase 2: all threads enqueue concurrently (should not livelock after threshold depletion/catchup).
+    // Phase 2: all threads enqueue concurrently (should not livelock after threshold
+    // depletion/catchup).
     SpinStart enq_gate;
     std::atomic<std::uint64_t> next{0};
     std::vector<std::thread> enq_threads;
@@ -315,7 +320,8 @@ TEST(SCQ_Stress, Catchup_30Enq70Deq_QueueNonEmptyStillWorks) {
 
             // Phase 2: dequeue-heavy workload.
             phase2_gate.arrive_and_wait();
-            while (consumed.load(std::memory_order_relaxed) < kTotal && err.ok.load(std::memory_order_relaxed)) {
+            while (consumed.load(std::memory_order_relaxed) < kTotal &&
+                   err.ok.load(std::memory_order_relaxed)) {
                 const auto v = q.dequeue();
                 if (v == lscq::SCQ<std::uint64_t>::kEmpty) {
                     std::this_thread::yield();
@@ -336,8 +342,9 @@ TEST(SCQ_Stress, Catchup_30Enq70Deq_QueueNonEmptyStillWorks) {
     }
 
     phase1_gate.release_when_all_ready(kConsumers);
-    ASSERT_TRUE(wait_until([&]() { return phase1_done.load(std::memory_order_acquire) == kConsumers; },
-                           std::chrono::seconds(2)));
+    ASSERT_TRUE(
+        wait_until([&]() { return phase1_done.load(std::memory_order_acquire) == kConsumers; },
+                   std::chrono::seconds(2)));
 
     const auto tail_after = q.tail_.load(std::memory_order_relaxed);
     EXPECT_GT(tail_after, initial_tail) << "expected fixState to advance tail before phase 2";

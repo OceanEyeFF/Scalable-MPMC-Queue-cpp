@@ -13,4 +13,3 @@
 #define LSCQ_LIKELY(x) (!!(x))
 #define LSCQ_UNLIKELY(x) (!!(x))
 #endif
-

@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <cstring>
-
 #include <lscq/config.hpp>
 
 #if (LSCQ_ARCH_X86_64 || LSCQ_ARCH_X86_32) && LSCQ_COMPILER_MSVC
@@ -21,9 +20,8 @@ inline T* atomic_exchange_ptr(T** ptr, T* desired) noexcept {
     return __atomic_exchange_n(ptr, desired, __ATOMIC_ACQ_REL);
 #elif LSCQ_COMPILER_MSVC
     static_assert(sizeof(T*) == sizeof(void*));
-    return reinterpret_cast<T*>(
-        _InterlockedExchangePointer(reinterpret_cast<void* volatile*>(ptr),
-                                    reinterpret_cast<void*>(desired)));
+    return reinterpret_cast<T*>(_InterlockedExchangePointer(reinterpret_cast<void* volatile*>(ptr),
+                                                            reinterpret_cast<void*>(desired)));
 #else
     // Conservative fallback: CAS loop.
     T* cur = nullptr;
@@ -50,9 +48,9 @@ inline bool atomic_compare_exchange_ptr(T** ptr, T*& expected, T* desired) noexc
                                        __ATOMIC_ACQUIRE);
 #elif LSCQ_COMPILER_MSVC
     static_assert(sizeof(T*) == sizeof(void*));
-    void* const prev = _InterlockedCompareExchangePointer(
-        reinterpret_cast<void* volatile*>(ptr), reinterpret_cast<void*>(desired),
-        reinterpret_cast<void*>(expected));
+    void* const prev = _InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(ptr),
+                                                          reinterpret_cast<void*>(desired),
+                                                          reinterpret_cast<void*>(expected));
     if (prev == expected) {
         return true;
     }
@@ -73,9 +71,8 @@ inline std::uint64_t atomic_exchange_u64(std::uint64_t* ptr, std::uint64_t desir
     return __atomic_exchange_n(ptr, desired, __ATOMIC_ACQ_REL);
 #elif LSCQ_COMPILER_MSVC
     static_assert(sizeof(long long) == 8, "long long must be 64-bit");
-    return static_cast<std::uint64_t>(
-        _InterlockedExchange64(reinterpret_cast<volatile long long*>(ptr),
-                               static_cast<long long>(desired)));
+    return static_cast<std::uint64_t>(_InterlockedExchange64(
+        reinterpret_cast<volatile long long*>(ptr), static_cast<long long>(desired)));
 #else
     std::uint64_t cur = 0;
     (void)__atomic_load(ptr, &cur, __ATOMIC_RELAXED);
@@ -91,4 +88,3 @@ inline std::uint64_t atomic_exchange_u64(std::uint64_t* ptr, std::uint64_t desir
 }
 
 }  // namespace lscq::detail
-

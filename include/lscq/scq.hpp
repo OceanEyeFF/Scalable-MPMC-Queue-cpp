@@ -15,12 +15,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <lscq/cas2.hpp>
+#include <lscq/config.hpp>
 #include <memory>
 #include <new>
 #include <type_traits>
-
-#include <lscq/cas2.hpp>
-#include <lscq/config.hpp>
 
 namespace lscq {
 
@@ -29,11 +28,12 @@ namespace lscq {
  * @brief Scalable Circular Queue (SCQ) with bounded capacity.
  *
  * SCQ uses a ring of size 2n (SCQSIZE) but provides an effective usable capacity of n (QSIZE).
- * It extends the NCQ-style entry representation with a packed bitfield: cycle (63 bits) + isSafe (1 bit).
+ * It extends the NCQ-style entry representation with a packed bitfield: cycle (63 bits) + isSafe (1
+ * bit).
  *
  * @tparam T Value type stored in the queue (must be an unsigned integral type)
- * @note The queue uses a reserved sentinel value (@ref kEmpty) to indicate emptiness. Callers must not enqueue
- *       this value.
+ * @note The queue uses a reserved sentinel value (@ref kEmpty) to indicate emptiness. Callers must
+ * not enqueue this value.
  *
  * Thread-safety: @ref enqueue, @ref dequeue, and @ref is_empty are safe for concurrent callers.
  *
@@ -53,7 +53,7 @@ namespace lscq {
  */
 template <class T>
 class SCQ {
-public:
+   public:
     /** @brief Slot entry type used by the queue (128-bit CAS2 payload) */
     using Entry = lscq::Entry;
 
@@ -68,7 +68,8 @@ public:
     /**
      * @brief Construct an SCQ with a given ring size
      *
-     * @param scqsize Ring buffer size (2n). Implementations may clamp/round this to meet algorithm constraints.
+     * @param scqsize Ring buffer size (2n). Implementations may clamp/round this to meet algorithm
+     * constraints.
      * @note Thread-safe: construction must complete before the queue is shared with other threads.
      */
     explicit SCQ(std::size_t scqsize = config::DEFAULT_SCQSIZE);
@@ -76,7 +77,8 @@ public:
     /**
      * @brief Destroy the queue and release all internal storage
      *
-     * @note Thread-safe: callers must ensure no other thread is accessing the queue during destruction.
+     * @note Thread-safe: callers must ensure no other thread is accessing the queue during
+     * destruction.
      */
     ~SCQ();
 
@@ -88,11 +90,12 @@ public:
     /**
      * @brief Enqueue an index value.
      *
-     * @param index Value to enqueue (must not equal @ref kEmpty and must be less than the internal bottom marker).
+     * @param index Value to enqueue (must not equal @ref kEmpty and must be less than the internal
+     * bottom marker).
      * @return true if enqueued; false if @p index is invalid.
      *
-     * @note This is a bounded queue and does not provide a bounded "queue full" failure mode: under full
-     *       conditions the algorithm will spin until space becomes available.
+     * @note This is a bounded queue and does not provide a bounded "queue full" failure mode: under
+     * full conditions the algorithm will spin until space becomes available.
      */
     bool enqueue(T index);
 
@@ -115,7 +118,7 @@ public:
     /** @brief Return the usable capacity (QSIZE = n). */
     std::size_t qsize() const noexcept { return qsize_; }
 
-private:
+   private:
     static constexpr std::uint64_t kIsSafeMask = 1ULL;
 
     static constexpr std::uint64_t pack_cycle_flags(std::uint64_t cycle, bool is_safe) noexcept {

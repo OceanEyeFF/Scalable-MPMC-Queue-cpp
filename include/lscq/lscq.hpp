@@ -15,7 +15,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-
 #include <lscq/config.hpp>
 #include <lscq/ebr.hpp>
 #include <lscq/scqp.hpp>
@@ -42,7 +41,8 @@ namespace lscq {
  * and consumers.
  *
  * Complexity:
- * - @ref enqueue / @ref dequeue - O(1) expected (may allocate when extending; may spin/yield under contention)
+ * - @ref enqueue / @ref dequeue - O(1) expected (may allocate when extending; may spin/yield under
+ * contention)
  *
  * @note The queue stores raw pointers and does not manage the lifetime of the pointee objects.
  *
@@ -60,7 +60,7 @@ namespace lscq {
  */
 template <class T>
 class LSCQ {
-public:
+   public:
     /**
      * @brief Internal node containing an SCQP ring plus linkage metadata.
      *
@@ -103,7 +103,8 @@ public:
     /**
      * @brief Destroy the LSCQ and reclaim all remaining nodes
      *
-     * @note Callers must ensure no other thread is concurrently accessing the queue during destruction.
+     * @note Callers must ensure no other thread is concurrently accessing the queue during
+     * destruction.
      */
     ~LSCQ();
 
@@ -121,7 +122,8 @@ public:
      * @param ptr Pointer to enqueue (must not be nullptr).
      * @return true if the pointer was successfully enqueued, false otherwise
      *
-     * @note Returns false if @p ptr is null, or if an internal retry limit is hit under extreme contention.
+     * @note Returns false if @p ptr is null, or if an internal retry limit is hit under extreme
+     * contention.
      */
     bool enqueue(T* ptr);
 
@@ -137,12 +139,12 @@ public:
      */
     T* dequeue();
 
-private:
+   private:
     alignas(64) std::atomic<Node*> head_;  // Head of the linked list
     alignas(64) std::atomic<Node*> tail_;  // Tail of the linked list
 
-    EBRManager& ebr_;       // Reference to EBR manager for memory reclamation
-    std::size_t scqsize_;   // Size of each SCQP node
+    EBRManager& ebr_;      // Reference to EBR manager for memory reclamation
+    std::size_t scqsize_;  // Size of each SCQP node
 };
 
 }  // namespace lscq

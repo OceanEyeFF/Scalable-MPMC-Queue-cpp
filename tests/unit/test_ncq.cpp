@@ -136,7 +136,8 @@ TEST(ConcurrentEnqueue, EightThreadsEnqueue80000NoLossNoDup) {
     constexpr std::uint64_t kItersPerThread = 10000;
     constexpr std::uint64_t kTotal = kThreads * kItersPerThread;
 
-    // Keep capacity comfortably above the maximum expected occupancy to avoid pathological "full" behavior.
+    // Keep capacity comfortably above the maximum expected occupancy to avoid pathological "full"
+    // behavior.
     lscq::NCQ<std::uint64_t> q(131072);
 
     SpinStart gate;

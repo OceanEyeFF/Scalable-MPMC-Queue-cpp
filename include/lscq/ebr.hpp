@@ -60,7 +60,7 @@ namespace lscq {
  * @endcode
  */
 class EBRManager {
-public:
+   public:
     /**
      * @brief Construct an EBR manager
      */
@@ -152,7 +152,7 @@ public:
      */
     std::size_t pending_count() const noexcept;
 
-private:
+   private:
     struct RetiredNode {
         void* ptr;
         std::function<void(void*)> deleter;
@@ -201,7 +201,7 @@ private:
  * @endcode
  */
 class EpochGuard {
-public:
+   public:
     /**
      * @brief Construct an EpochGuard and enter critical section
      *
@@ -219,7 +219,7 @@ public:
     EpochGuard(EpochGuard&&) = delete;
     EpochGuard& operator=(EpochGuard&&) = delete;
 
-private:
+   private:
     EBRManager& ebr_;
 };
 

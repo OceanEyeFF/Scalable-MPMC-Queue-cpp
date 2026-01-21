@@ -39,7 +39,7 @@ namespace lscq {
  */
 template <class T>
 class MutexQueue {
-public:
+   public:
     /** @brief Value type stored in the queue. */
     using value_type = T;
 
@@ -92,7 +92,7 @@ public:
         return true;
     }
 
-private:
+   private:
     mutable std::mutex mu_;
     std::queue<T> q_;
 };

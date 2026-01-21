@@ -45,7 +45,7 @@ namespace lscq {
  */
 template <class T>
 class MSQueue {
-private:
+   private:
     struct Node {
         T data;
         std::atomic<Node*> next;
@@ -55,7 +55,7 @@ private:
         explicit Node(const T& v) : data(v), next(nullptr), retired_next(nullptr) {}
     };
 
-public:
+   public:
     /** @brief Construct an empty queue containing an internal dummy node. */
     MSQueue();
     /** @brief Destroy the queue and free all remaining nodes (must not race with other threads). */
@@ -88,7 +88,7 @@ public:
      */
     static constexpr std::size_t node_size_bytes() noexcept { return sizeof(Node); }
 
-private:
+   private:
     void retire_node(Node* node) noexcept;
     void delete_chain(Node* first) noexcept;
     void delete_retired() noexcept;

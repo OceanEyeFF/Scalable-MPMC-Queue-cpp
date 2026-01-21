@@ -45,7 +45,8 @@ struct ErrorState {
     }
 };
 
-inline bool ptr_to_index(const std::uint64_t* base, std::size_t size, const std::uint64_t* p, std::uint64_t& out) {
+inline bool ptr_to_index(const std::uint64_t* base, std::size_t size, const std::uint64_t* p,
+                         std::uint64_t& out) {
     if (p < base || p >= base + size) {
         return false;
     }
@@ -159,19 +160,22 @@ TEST(SCQP_Performance, QueueSizeComparison_12P12C_1200_5900X) {
             t.join();
         }
         const auto end = std::chrono::steady_clock::now();
-        const auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        const auto duration_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
         // Calculate throughput and memory usage
         const double ops_per_sec = (kTotal * 1000.0) / duration_ms;
-        const double memory_mb = (qsize * sizeof(typename lscq::SCQP<std::uint64_t>::EntryP)) / (1024.0 * 1024.0);
+        const double memory_mb =
+            (qsize * sizeof(typename lscq::SCQP<std::uint64_t>::EntryP)) / (1024.0 * 1024.0);
 
-        std::cout << "Queue Size: " << std::setw(6) << qsize
-                  << " (" << std::fixed << std::setprecision(2) << std::setw(6) << memory_mb << " MB)"
+        std::cout << "Queue Size: " << std::setw(6) << qsize << " (" << std::fixed
+                  << std::setprecision(2) << std::setw(6) << memory_mb << " MB)"
                   << " | Time: " << std::setw(6) << duration_ms << " ms"
-                  << " | Throughput: " << std::setw(8) << std::fixed << std::setprecision(0) << ops_per_sec << " ops/s"
-                  << std::endl;
+                  << " | Throughput: " << std::setw(8) << std::fixed << std::setprecision(0)
+                  << ops_per_sec << " ops/s" << std::endl;
 
-        ASSERT_TRUE(err.ok.load()) << "Queue size=" << qsize << ", error kind=" << err.kind.load() << " value=" << err.value.load();
+        ASSERT_TRUE(err.ok.load()) << "Queue size=" << qsize << ", error kind=" << err.kind.load()
+                                   << " value=" << err.value.load();
         ASSERT_EQ(consumed.load(), kTotal) << "Queue size=" << qsize;
     }
 

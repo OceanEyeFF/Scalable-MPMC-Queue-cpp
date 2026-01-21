@@ -100,7 +100,8 @@ static_assert(kCas2FallbackStripeCount == 16u || kCas2FallbackStripeCount == 32u
               "LSCQ_CAS2_FALLBACK_STRIPE_COUNT must be 16 or 32");
 
 #if defined(__cpp_lib_hardware_interference_size)
-inline constexpr std::size_t kCas2FallbackCacheLineSize = std::hardware_destructive_interference_size;
+inline constexpr std::size_t kCas2FallbackCacheLineSize =
+    std::hardware_destructive_interference_size;
 #else
 inline constexpr std::size_t kCas2FallbackCacheLineSize = 64u;
 #endif

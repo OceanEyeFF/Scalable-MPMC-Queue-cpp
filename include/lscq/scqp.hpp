@@ -15,12 +15,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <lscq/cas2.hpp>
+#include <lscq/config.hpp>
 #include <memory>
 #include <new>
 #include <type_traits>
-
-#include <lscq/cas2.hpp>
-#include <lscq/config.hpp>
 
 namespace lscq {
 
@@ -28,12 +27,13 @@ namespace lscq {
  * @class SCQP
  * @brief Scalable Circular Queue (SCQ) variant that stores pointers (T*).
  *
- * This queue exposes a pointer API: @ref enqueue accepts non-null pointers, and @ref dequeue returns
- * nullptr to indicate an empty queue.
+ * This queue exposes a pointer API: @ref enqueue accepts non-null pointers, and @ref dequeue
+ * returns nullptr to indicate an empty queue.
  *
- * When 128-bit CAS2 (CMPXCHG16B) is available at runtime, SCQP stores pointers directly in the slot entry
- * (@ref EntryP). Otherwise it automatically falls back to an index-based entry format plus a side pointer
- * array.
+ * When 128-bit CAS2 (CMPXCHG16B) is available at runtime, SCQP stores pointers directly in the slot
+ * entry
+ * (@ref EntryP). Otherwise it automatically falls back to an index-based entry format plus a side
+ * pointer array.
  *
  * @tparam T Pointee type. The queue stores pointers to T (T*).
  *
@@ -53,7 +53,7 @@ namespace lscq {
  */
 template <class T>
 class SCQP {
-public:
+   public:
     /**
      * @brief 16-byte CAS2 payload used by the pointer fast path.
      *
@@ -73,8 +73,10 @@ public:
     /**
      * @brief Construct an SCQP with the given ring size.
      *
-     * @param scqsize Ring buffer size (2n). Implementations may clamp/round this to meet algorithm constraints.
-     * @param force_fallback If true, forces the index+side-array fallback even if CAS2 is available.
+     * @param scqsize Ring buffer size (2n). Implementations may clamp/round this to meet algorithm
+     * constraints.
+     * @param force_fallback If true, forces the index+side-array fallback even if CAS2 is
+     * available.
      *
      * @throws std::bad_alloc If internal storage allocation fails.
      */
@@ -114,7 +116,7 @@ public:
     /** @brief Return the usable capacity (QSIZE = n). */
     std::size_t qsize() const noexcept { return qsize_; }
 
-private:
+   private:
     static constexpr std::uint64_t kIsSafeMask = 1ULL;
     static constexpr std::uint64_t kEmptyIndex = std::numeric_limits<std::uint64_t>::max();
 

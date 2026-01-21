@@ -1,9 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <lscq/ebr.hpp>
-
 #include <atomic>
 #include <chrono>
+#include <lscq/ebr.hpp>
 #include <thread>
 #include <vector>
 
@@ -86,7 +85,7 @@ TEST(EBR_Basic, ReclaimAfterEpochAdvance) {
 
     // Advance epoch multiple times to trigger reclamation
     // Nodes can be reclaimed when current_epoch >= retire_epoch + 2
-    ebr.try_reclaim();  // Epoch 0 -> 1, safe_epoch would be -1, cannot reclaim
+    ebr.try_reclaim();               // Epoch 0 -> 1, safe_epoch would be -1, cannot reclaim
     EXPECT_TRUE(ebr.has_pending());  // Still pending
 
     ebr.try_reclaim();  // Epoch 1 -> 2, safe_epoch = 0, can reclaim epoch 0 nodes
@@ -228,8 +227,7 @@ TEST(EBR_Concurrent, ConcurrentRetireAndReclaim) {
     }
 
     // Wait for all threads to be ready
-    while (ready_count.load(std::memory_order_acquire) <
-           (kNumProducers + kNumReclaimers)) {
+    while (ready_count.load(std::memory_order_acquire) < (kNumProducers + kNumReclaimers)) {
         std::this_thread::yield();
     }
     start.store(true, std::memory_order_release);

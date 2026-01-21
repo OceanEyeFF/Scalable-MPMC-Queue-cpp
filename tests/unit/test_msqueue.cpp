@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <lscq/msqueue.hpp>
-
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <lscq/msqueue.hpp>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -94,4 +93,3 @@ TEST(MSQueue, MultiProducerMultiConsumer) {
     EXPECT_EQ(results.front(), 0u);
     EXPECT_EQ(results.back(), kTotalItems - 1);
 }
-

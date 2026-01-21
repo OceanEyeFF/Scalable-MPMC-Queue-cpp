@@ -15,12 +15,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <lscq/cas2.hpp>
+#include <lscq/config.hpp>
 #include <memory>
 #include <new>
 #include <type_traits>
-
-#include <lscq/cas2.hpp>
-#include <lscq/config.hpp>
 
 namespace lscq {
 
@@ -28,16 +27,18 @@ namespace lscq {
  * @class NCQ
  * @brief Non-blocking circular queue (NCQ) with bounded capacity.
  *
- * This is a practical implementation of the Naive Circular Queue control flow described in the paper (Figure 5).
+ * This is a practical implementation of the Naive Circular Queue control flow described in the
+ * paper (Figure 5).
  *
  * @tparam T Value type stored in the queue (must be an unsigned integral type)
- * @note The queue uses a reserved sentinel value (@ref kEmpty) to indicate emptiness. Callers must not enqueue
- *       this value.
- * Thread-safety: @ref enqueue, @ref dequeue, and @ref is_empty are safe for concurrent callers.
+ * @note The queue uses a reserved sentinel value (@ref kEmpty) to indicate emptiness. Callers must
+ * not enqueue this value. Thread-safety: @ref enqueue, @ref dequeue, and @ref is_empty are safe for
+ * concurrent callers.
  *
  * Complexity: O(1) expected per operation (may spin under contention).
  *
- * @note The queue is bounded and does not provide a bounded "queue full" failure mode: when the ring is full,
+ * @note The queue is bounded and does not provide a bounded "queue full" failure mode: when the
+ * ring is full,
  *       @ref enqueue will spin until space becomes available.
  *
  * Example:
@@ -52,7 +53,7 @@ namespace lscq {
  */
 template <class T>
 class NCQ {
-public:
+   public:
     /** @brief Slot entry type used by the queue */
     using Entry = lscq::Entry;
 
@@ -68,7 +69,8 @@ public:
      * @brief Construct a bounded circular queue with a given capacity
      *
      * @param capacity Number of slots in the queue
-     * @note Implementations may clamp the capacity to a minimum and round it up to a cache-line-friendly multiple.
+     * @note Implementations may clamp the capacity to a minimum and round it up to a
+     * cache-line-friendly multiple.
      * @note Thread-safe: construction must complete before the queue is shared with other threads.
      */
     explicit NCQ(std::size_t capacity = config::DEFAULT_SCQSIZE);
@@ -76,7 +78,8 @@ public:
     /**
      * @brief Destroy the queue and release all internal storage
      *
-     * @note Thread-safe: callers must ensure no other thread is accessing the queue during destruction.
+     * @note Thread-safe: callers must ensure no other thread is accessing the queue during
+     * destruction.
      */
     ~NCQ();
 
@@ -114,7 +117,7 @@ public:
      */
     bool is_empty() const noexcept;
 
-private:
+   private:
     struct EntriesDeleter {
         void operator()(Entry* p) const noexcept { ::operator delete[](p, std::align_val_t(64)); }
     };

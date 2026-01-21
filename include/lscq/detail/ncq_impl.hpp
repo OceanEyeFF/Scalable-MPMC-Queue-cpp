@@ -14,4 +14,3 @@ inline Entry entry_load(Entry* ptr) noexcept {
 }
 
 }  // namespace lscq::detail
-

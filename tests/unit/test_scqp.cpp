@@ -166,7 +166,8 @@ TEST(SCQP_Concurrent, DEBUG_1P1C_64_Minimal) {
 
     std::cout << "\n=== DEBUG: 1P+1C @ 64 operations ===" << std::endl;
     std::cout << "has_cas2_support() = " << (lscq::has_cas2_support() ? "YES" : "NO") << std::endl;
-    std::cout << "is_using_fallback() = " << (q.is_using_fallback() ? "YES (mutex)" : "NO (native CAS2)") << std::endl;
+    std::cout << "is_using_fallback() = "
+              << (q.is_using_fallback() ? "YES (mutex)" : "NO (native CAS2)") << std::endl;
     std::cout << "scqsize = " << q.scqsize_ << ", qsize = " << q.qsize_ << std::endl;
     std::cout << "threshold = " << q.threshold_.load() << std::endl;
     std::cout << "==================================\n" << std::endl;
@@ -188,13 +189,11 @@ TEST(SCQP_Concurrent, DEBUG_1P1C_64_Minimal) {
                 std::this_thread::yield();
                 ++spin_count;
                 if (spin_count % 1000 == 0) {
-                    std::cout << "[Producer] Spinning at i=" << i
-                              << ", head=" << q.head_.load()
+                    std::cout << "[Producer] Spinning at i=" << i << ", head=" << q.head_.load()
                               << ", tail=" << q.tail_.load()
                               << ", threshold=" << q.threshold_.load()
                               << ", enq_success=" << q.enq_success_.load()
-                              << ", deq_success=" << q.deq_success_.load()
-                              << std::endl;
+                              << ", deq_success=" << q.deq_success_.load() << std::endl;
                 }
             }
             enqueued.fetch_add(1, std::memory_order_relaxed);
@@ -216,12 +215,10 @@ TEST(SCQP_Concurrent, DEBUG_1P1C_64_Minimal) {
                 ++spin_count;
                 if (spin_count % 1000 == 0) {
                     std::cout << "[Consumer] Spinning at count=" << count
-                              << ", head=" << q.head_.load()
-                              << ", tail=" << q.tail_.load()
+                              << ", head=" << q.head_.load() << ", tail=" << q.tail_.load()
                               << ", threshold=" << q.threshold_.load()
                               << ", enq_success=" << q.enq_success_.load()
-                              << ", deq_success=" << q.deq_success_.load()
-                              << std::endl;
+                              << ", deq_success=" << q.deq_success_.load() << std::endl;
                 }
                 continue;
             }
@@ -239,7 +236,8 @@ TEST(SCQP_Concurrent, DEBUG_1P1C_64_Minimal) {
     consumer.join();
 
     std::cout << "\n=== Final State ===" << std::endl;
-    std::cout << "enqueued = " << enqueued.load() << ", dequeued = " << dequeued.load() << std::endl;
+    std::cout << "enqueued = " << enqueued.load() << ", dequeued = " << dequeued.load()
+              << std::endl;
     std::cout << "head = " << q.head_.load() << ", tail = " << q.tail_.load() << std::endl;
     std::cout << "==================\n" << std::endl;
 
@@ -257,7 +255,8 @@ TEST(SCQP_Concurrent, DEBUG_4P4C_256_FindCriticalPoint) {
 
     std::cout << "\n=== DEBUG: 4P+4C @ 256 operations ===" << std::endl;
     std::cout << "has_cas2_support() = " << (lscq::has_cas2_support() ? "YES" : "NO") << std::endl;
-    std::cout << "is_using_fallback() = " << (q.is_using_fallback() ? "YES (mutex)" : "NO (native CAS2)") << std::endl;
+    std::cout << "is_using_fallback() = "
+              << (q.is_using_fallback() ? "YES (mutex)" : "NO (native CAS2)") << std::endl;
     std::cout << "scqsize = " << q.scqsize_ << ", qsize = " << q.qsize_ << std::endl;
     std::cout << "threshold = " << q.threshold_.load() << std::endl;
     std::cout << "=====================================\n" << std::endl;
@@ -287,8 +286,8 @@ TEST(SCQP_Concurrent, DEBUG_4P4C_256_FindCriticalPoint) {
                     ++spin_count;
                     if (spin_count % 10000 == 0) {
                         std::cout << "[Producer " << p << "] Spinning at i=" << i
-                                  << ", head=" << q.head_.load()
-                                  << ", tail=" << q.tail_.load() << std::endl;
+                                  << ", head=" << q.head_.load() << ", tail=" << q.tail_.load()
+                                  << std::endl;
                     }
                 }
             }
@@ -308,8 +307,8 @@ TEST(SCQP_Concurrent, DEBUG_4P4C_256_FindCriticalPoint) {
                     ++spin_count;
                     if (spin_count % 10000 == 0) {
                         std::cout << "[Consumer " << c << "] Spinning, consumed=" << consumed.load()
-                                  << ", head=" << q.head_.load()
-                                  << ", tail=" << q.tail_.load() << std::endl;
+                                  << ", head=" << q.head_.load() << ", tail=" << q.tail_.load()
+                                  << std::endl;
                     }
                     continue;
                 }
@@ -334,7 +333,8 @@ TEST(SCQP_Concurrent, DEBUG_4P4C_256_FindCriticalPoint) {
         t.join();
     }
 
-    std::cout << "\n=== Final: consumed = " << consumed.load() << "/" << kTotal << " ===" << std::endl;
+    std::cout << "\n=== Final: consumed = " << consumed.load() << "/" << kTotal
+              << " ===" << std::endl;
 
     ASSERT_TRUE(err.ok.load()) << "error kind=" << err.kind.load() << " value=" << err.value.load();
     ASSERT_EQ(consumed.load(), kTotal);
@@ -350,7 +350,8 @@ TEST(SCQP_Concurrent, DEBUG_4P8C_256_UnbalancedConsumers) {
 
     std::cout << "\n=== DEBUG: 4P+8C @ 256 operations ===" << std::endl;
     std::cout << "has_cas2_support() = " << (lscq::has_cas2_support() ? "YES" : "NO") << std::endl;
-    std::cout << "is_using_fallback() = " << (q.is_using_fallback() ? "YES (mutex)" : "NO (native CAS2)") << std::endl;
+    std::cout << "is_using_fallback() = "
+              << (q.is_using_fallback() ? "YES (mutex)" : "NO (native CAS2)") << std::endl;
     std::cout << "scqsize = " << q.scqsize_ << ", qsize = " << q.qsize_ << std::endl;
     std::cout << "threshold = " << q.threshold_.load() << std::endl;
     std::cout << "=====================================\n" << std::endl;
@@ -380,8 +381,8 @@ TEST(SCQP_Concurrent, DEBUG_4P8C_256_UnbalancedConsumers) {
                     ++spin_count;
                     if (spin_count % 10000 == 0) {
                         std::cout << "[Producer " << p << "] Spinning at i=" << i
-                                  << ", head=" << q.head_.load()
-                                  << ", tail=" << q.tail_.load() << std::endl;
+                                  << ", head=" << q.head_.load() << ", tail=" << q.tail_.load()
+                                  << std::endl;
                     }
                 }
             }
@@ -401,8 +402,8 @@ TEST(SCQP_Concurrent, DEBUG_4P8C_256_UnbalancedConsumers) {
                     ++spin_count;
                     if (spin_count % 10000 == 0) {
                         std::cout << "[Consumer " << c << "] Spinning, consumed=" << consumed.load()
-                                  << ", head=" << q.head_.load()
-                                  << ", tail=" << q.tail_.load() << std::endl;
+                                  << ", head=" << q.head_.load() << ", tail=" << q.tail_.load()
+                                  << std::endl;
                     }
                     continue;
                 }
@@ -427,7 +428,8 @@ TEST(SCQP_Concurrent, DEBUG_4P8C_256_UnbalancedConsumers) {
         t.join();
     }
 
-    std::cout << "\n=== Final: consumed = " << consumed.load() << "/" << kTotal << " ===" << std::endl;
+    std::cout << "\n=== Final: consumed = " << consumed.load() << "/" << kTotal
+              << " ===" << std::endl;
 
     ASSERT_TRUE(err.ok.load()) << "error kind=" << err.kind.load() << " value=" << err.value.load();
     ASSERT_EQ(consumed.load(), kTotal);
@@ -559,8 +561,7 @@ TEST(SCQP_Concurrent, DEBUG_16P16C_1K_ReasonableQueueSize) {
                     ++spin_count;
                     if (spin_count % 100000 == 0) {
                         std::cout << "[Producer " << p << "] Spinning at i=" << i
-                                  << ", spin=" << spin_count
-                                  << ", head=" << q.head_.load()
+                                  << ", spin=" << spin_count << ", head=" << q.head_.load()
                                   << ", tail=" << q.tail_.load() << std::endl;
                     }
                 }
@@ -582,10 +583,9 @@ TEST(SCQP_Concurrent, DEBUG_16P16C_1K_ReasonableQueueSize) {
                     ++spin_count;
                     if (spin_count % 100000 == 0) {
                         std::cout << "[Consumer " << c << "] Spinning"
-                                  << ", consumed=" << consumed.load()
-                                  << ", spin=" << spin_count
-                                  << ", head=" << q.head_.load()
-                                  << ", tail=" << q.tail_.load() << std::endl;
+                                  << ", consumed=" << consumed.load() << ", spin=" << spin_count
+                                  << ", head=" << q.head_.load() << ", tail=" << q.tail_.load()
+                                  << std::endl;
                     }
                     continue;
                 }
@@ -609,8 +609,8 @@ TEST(SCQP_Concurrent, DEBUG_16P16C_1K_ReasonableQueueSize) {
         t.join();
     }
 
-    std::cout << "\n=== Final: enqueued=" << enqueued.load()
-              << ", consumed=" << consumed.load() << "/" << kTotal << " ===" << std::endl;
+    std::cout << "\n=== Final: enqueued=" << enqueued.load() << ", consumed=" << consumed.load()
+              << "/" << kTotal << " ===" << std::endl;
 
     ASSERT_TRUE(err.ok.load()) << "error kind=" << err.kind.load() << " value=" << err.value.load();
     ASSERT_EQ(consumed.load(), kTotal);
@@ -643,7 +643,8 @@ TEST(SCQP_Stress, ThresholdExhaustionThenBurstEnqueue_AllThreadsEnqueue) {
     }
 
     const auto tail_after = q.tail_.load(std::memory_order_relaxed);
-    EXPECT_GT(tail_after, initial_tail) << "expected fixState to advance tail on empty dequeue storm";
+    EXPECT_GT(tail_after, initial_tail)
+        << "expected fixState to advance tail on empty dequeue storm";
 
     std::vector<std::uint64_t> values(static_cast<std::size_t>(kTotal));
     for (std::uint64_t i = 0; i < kTotal; ++i) {
@@ -744,8 +745,9 @@ TEST(SCQP_Stress, Catchup_30Enq70Deq_QueueNonEmptyStillWorks) {
     }
 
     phase1_gate.release_when_all_ready(kConsumers);
-    ASSERT_TRUE(wait_until([&]() { return phase1_done.load(std::memory_order_acquire) == kConsumers; },
-                           std::chrono::seconds(2)));
+    ASSERT_TRUE(
+        wait_until([&]() { return phase1_done.load(std::memory_order_acquire) == kConsumers; },
+                   std::chrono::seconds(2)));
 
     const auto tail_after = q.tail_.load(std::memory_order_relaxed);
     EXPECT_GT(tail_after, initial_tail) << "expected fixState to advance tail before phase 2";
@@ -784,7 +786,8 @@ TEST(SCQP_Stress, Catchup_30Enq70Deq_QueueNonEmptyStillWorks) {
 TEST(SCQP_Concurrent, ProducersConsumers16x16_1K_NoLossNoDup_NativeCAS2) {
     // This test REQUIRES native CAS2 support
     if (!lscq::has_cas2_support()) {
-        GTEST_SKIP() << "CAS2 not supported on this CPU - cannot validate native CAS2 performance (G3.1 target)";
+        GTEST_SKIP() << "CAS2 not supported on this CPU - cannot validate native CAS2 performance "
+                        "(G3.1 target)";
     }
 
     constexpr std::size_t kProducers = 16;
@@ -796,7 +799,8 @@ TEST(SCQP_Concurrent, ProducersConsumers16x16_1K_NoLossNoDup_NativeCAS2) {
     lscq::SCQP<std::uint64_t> q(4096, false);  // force_fallback = false, use reasonable queue size
 
     // Verify SCQP is indeed using native CAS2
-    ASSERT_FALSE(q.is_using_fallback()) << "Expected native CAS2 mode, but SCQP fell back to mutex mode";
+    ASSERT_FALSE(q.is_using_fallback())
+        << "Expected native CAS2 mode, but SCQP fell back to mutex mode";
 
     SpinStart gate;
     ErrorState err;

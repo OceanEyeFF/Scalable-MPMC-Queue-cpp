@@ -42,4 +42,3 @@ inline unsigned ctz_u64(std::uint64_t v) noexcept {
 inline unsigned log2_pow2_u64(std::uint64_t v) noexcept { return ctz_u64(v); }
 
 }  // namespace lscq::detail
-

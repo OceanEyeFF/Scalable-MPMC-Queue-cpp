@@ -123,7 +123,8 @@ namespace lscq {
 
 /** @brief ABI version for public headers (bumped on breaking changes). */
 inline constexpr std::uint32_t kAbiVersion = 0;
-/** @brief Whether CAS2 support is enabled at build time (may still depend on runtime CPU support). */
+/** @brief Whether CAS2 support is enabled at build time (may still depend on runtime CPU support).
+ */
 inline constexpr bool kEnableCas2 = (LSCQ_ENABLE_CAS2 != 0);
 /** @brief Whether sanitizers are enabled at build time. */
 inline constexpr bool kEnableSanitizers = (LSCQ_ENABLE_SANITIZERS != 0);
@@ -135,16 +136,16 @@ namespace config {
 /**
  * @brief Default capacity (in slots) for NCQ/SCQ-family ring queues.
  *
- * @note This is a convenience default used by queue constructors. Specific queue implementations may clamp or
- *       round this value to meet alignment/cache-line constraints.
+ * @note This is a convenience default used by queue constructors. Specific queue implementations
+ * may clamp or round this value to meet alignment/cache-line constraints.
  */
 inline constexpr std::size_t DEFAULT_SCQSIZE = 65536;
 
 /**
  * @brief Default capacity (in slots) for generic queue-like components.
  *
- * @note This constant is intentionally separate from @ref DEFAULT_SCQSIZE so benchmarks and experiments can
- *       tune ring-queue and non-ring-queue defaults independently.
+ * @note This constant is intentionally separate from @ref DEFAULT_SCQSIZE so benchmarks and
+ * experiments can tune ring-queue and non-ring-queue defaults independently.
  */
 inline constexpr std::size_t DEFAULT_QSIZE = 32768;
 
