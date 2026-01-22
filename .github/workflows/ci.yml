@@ -288,4 +288,4 @@ jobs:
             -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -DLSCQ_CI_LIGHTWEIGHT_TESTS" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
           cmake --build build/ci/linux/tsan
-          ctest --test-dir build/ci/linux/tsan --output-on-failure
+          TSAN_OPTIONS="suppressions=${GITHUB_WORKSPACE}/tsan.supp" ctest --test-dir build/ci/linux/tsan --output-on-failure

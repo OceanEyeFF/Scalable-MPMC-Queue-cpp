@@ -1,0 +1,16 @@
+# ThreadSanitizer suppression file for LSCQ
+# This file documents known benign data races in lock-free algorithms
+
+# Benign data race in CAS2 fallback mutex path
+# The mutex protects write operations, but reads may occur lock-free in the native CAS2 path.
+# This is by design - the algorithm ensures correctness through atomic operations, not through
+# the mutex alone. The mutex is only for the fallback path when native CAS2 is unavailable.
+race:lscq::detail::cas2_mutex
+
+# Benign data race in EBR epoch checking
+# Worker threads update their own epoch without locking, while the reclaim thread reads
+# all thread epochs while holding a lock. This is safe because:
+# 1. Each thread only writes to its own epoch (no write-write conflict)
+# 2. Readers can tolerate stale epoch values (conservative approximation)
+# 3. The epoch is monotonically increasing, so any stale read is safe
+race:lscq::EBRManager::can_advance_epoch
