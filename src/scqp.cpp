@@ -1,13 +1,11 @@
-#include <lscq/scqp.hpp>
-
-#include <lscq/detail/atomic_ptr.hpp>
-#include <lscq/detail/likely.hpp>
-#include <lscq/detail/ncq_impl.hpp>
-
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <lscq/detail/atomic_ptr.hpp>
+#include <lscq/detail/likely.hpp>
+#include <lscq/detail/ncq_impl.hpp>
+#include <lscq/scqp.hpp>
 #include <mutex>
 #include <new>
 
@@ -21,9 +19,7 @@ inline bool cycle_less(std::uint64_t a, std::uint64_t b) noexcept {
     return static_cast<std::int64_t>(a - b) < 0;
 }
 
-constexpr bool is_power_of_two(std::size_t v) noexcept {
-    return v != 0 && (v & (v - 1)) == 0;
-}
+constexpr bool is_power_of_two(std::size_t v) noexcept { return v != 0 && (v & (v - 1)) == 0; }
 
 constexpr std::size_t round_up_pow2(std::size_t v) noexcept {
     if (v <= 1) {
@@ -60,9 +56,8 @@ inline bool cas2p_mutex(typename SCQP<T>::EntryP* ptr, typename SCQP<T>::EntryP&
 
 #if LSCQ_ARCH_X86_64 && LSCQ_PLATFORM_WINDOWS && LSCQ_COMPILER_MSVC
 template <class T>
-inline bool cas2p_native(typename SCQP<T>::EntryP* ptr,
-                                                      typename SCQP<T>::EntryP& expected,
-                                                      const typename SCQP<T>::EntryP& desired) noexcept {
+inline bool cas2p_native(typename SCQP<T>::EntryP* ptr, typename SCQP<T>::EntryP& expected,
+                         const typename SCQP<T>::EntryP& desired) noexcept {
     if (!lscq::detail::is_aligned_16(ptr)) {
         return cas2p_mutex<T>(ptr, expected, desired);
     }
@@ -77,9 +72,9 @@ inline bool cas2p_native(typename SCQP<T>::EntryP* ptr,
     std::memcpy(&expected_high, &expected.ptr, sizeof(expected_high));
     comparand[1] = lscq::detail::u64_to_ll(expected_high);
 
-    const char ok = _InterlockedCompareExchange128(
-        reinterpret_cast<volatile long long*>(ptr), lscq::detail::u64_to_ll(desired_high),
-        lscq::detail::u64_to_ll(desired_low), comparand);
+    const char ok = _InterlockedCompareExchange128(reinterpret_cast<volatile long long*>(ptr),
+                                                   lscq::detail::u64_to_ll(desired_high),
+                                                   lscq::detail::u64_to_ll(desired_low), comparand);
 
     expected.cycle_flags = lscq::detail::ll_to_u64(comparand[0]);
     const std::uint64_t out_high = lscq::detail::ll_to_u64(comparand[1]);
@@ -89,9 +84,8 @@ inline bool cas2p_native(typename SCQP<T>::EntryP* ptr,
 #elif LSCQ_ARCH_X86_64 && defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16) && \
     (defined(__GNUC__) || defined(__clang__))
 template <class T>
-inline bool cas2p_native(typename SCQP<T>::EntryP* ptr,
-                                                      typename SCQP<T>::EntryP& expected,
-                                                      const typename SCQP<T>::EntryP& desired) noexcept {
+inline bool cas2p_native(typename SCQP<T>::EntryP* ptr, typename SCQP<T>::EntryP& expected,
+                         const typename SCQP<T>::EntryP& desired) noexcept {
     if (!lscq::detail::is_aligned_16(ptr)) {
         return cas2p_mutex<T>(ptr, expected, desired);
     }
@@ -275,7 +269,19 @@ T* SCQP<T>::dequeue_ptr() {
     const std::int64_t threshold_reset = static_cast<std::int64_t>((scqsize << 1u) - 1u);
 
     if (LSCQ_UNLIKELY(threshold_.load(std::memory_order_acquire) < 0)) {
-        return nullptr;
+        // Threshold exhausted - check if queue is truly empty before returning nullptr.
+        // This handles the case where producers have completed but queue still has elements.
+        const std::uint64_t head_now = head_.load(std::memory_order_acquire);
+        const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
+
+        // If tail > head, queue is not empty - reset threshold and continue.
+        if (tail_now > head_now) {
+            threshold_.store(threshold_reset, std::memory_order_release);
+            // Fall through to normal dequeue logic
+        } else {
+            // Queue appears empty or threshold legitimately exhausted
+            return nullptr;
+        }
     }
 
     while (true) {
@@ -333,7 +339,14 @@ T* SCQP<T>::dequeue_ptr() {
             if (next <= 0) {
                 const std::uint64_t head_now = head_.load(std::memory_order_acquire);
                 const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
-                if (head_now > tail_now && (head_now - tail_now) > scqsize) {
+
+                // Reset threshold if queue might not be empty, but don't retry here
+                // to avoid head incrementing again (entry check will handle retry)
+                if (tail_now > head_now) {
+                    threshold_.store(threshold_reset, std::memory_order_release);
+                }
+                // Queue appears empty or severely lagging - call fixState if needed
+                else if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                     fixState();
                     threshold_.store(threshold_reset, std::memory_order_release);
                 }
@@ -346,6 +359,14 @@ T* SCQP<T>::dequeue_ptr() {
         if (LSCQ_UNLIKELY(next <= 0)) {
             const std::uint64_t head_now = head_.load(std::memory_order_acquire);
             const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
+
+            // If queue is not empty (tail > head), reset threshold and retry
+            if (tail_now > head_now) {
+                threshold_.store(threshold_reset, std::memory_order_release);
+                continue;  // Retry dequeue
+            }
+
+            // Queue appears empty or severely lagging - call fixState if needed
             if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                 fixState();
                 threshold_.store(threshold_reset, std::memory_order_release);
@@ -384,7 +405,8 @@ bool SCQP<T>::enqueue_index(T* ptr) {
                     }
 
                     Entry expected = ent;
-                    const Entry desired{pack_cycle_flags(cycle_t, true), static_cast<std::uint64_t>(j)};
+                    const Entry desired{pack_cycle_flags(cycle_t, true),
+                                        static_cast<std::uint64_t>(j)};
                     if (lscq::cas2(&entries_i_[j], expected, desired)) {
                         if (threshold_.load(std::memory_order_relaxed) != threshold_reset) {
                             threshold_.store(threshold_reset, std::memory_order_release);
@@ -411,7 +433,19 @@ T* SCQP<T>::dequeue_index() {
     const std::int64_t threshold_reset = static_cast<std::int64_t>((scqsize << 1u) - 1u);
 
     if (LSCQ_UNLIKELY(threshold_.load(std::memory_order_acquire) < 0)) {
-        return nullptr;
+        // Threshold exhausted - check if queue is truly empty before returning nullptr.
+        // This handles the case where producers have completed but queue still has elements.
+        const std::uint64_t head_now = head_.load(std::memory_order_acquire);
+        const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
+
+        // If tail > head, queue is not empty - reset threshold and continue.
+        if (tail_now > head_now) {
+            threshold_.store(threshold_reset, std::memory_order_release);
+            // Fall through to normal dequeue logic
+        } else {
+            // Queue appears empty or threshold legitimately exhausted
+            return nullptr;
+        }
     }
 
     while (true) {
@@ -470,7 +504,14 @@ T* SCQP<T>::dequeue_index() {
             if (next <= 0) {
                 const std::uint64_t head_now = head_.load(std::memory_order_acquire);
                 const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
-                if (head_now > tail_now && (head_now - tail_now) > scqsize) {
+
+                // Reset threshold if queue might not be empty, but don't retry here
+                // to avoid head incrementing again (entry check will handle retry)
+                if (tail_now > head_now) {
+                    threshold_.store(threshold_reset, std::memory_order_release);
+                }
+                // Queue appears empty or severely lagging - call fixState if needed
+                else if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                     fixState();
                     threshold_.store(threshold_reset, std::memory_order_release);
                 }
@@ -483,6 +524,14 @@ T* SCQP<T>::dequeue_index() {
         if (LSCQ_UNLIKELY(next <= 0)) {
             const std::uint64_t head_now = head_.load(std::memory_order_acquire);
             const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
+
+            // If queue is not empty (tail > head), reset threshold and retry
+            if (tail_now > head_now) {
+                threshold_.store(threshold_reset, std::memory_order_release);
+                continue;  // Retry dequeue
+            }
+
+            // Queue appears empty or severely lagging - call fixState if needed
             if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                 fixState();
                 threshold_.store(threshold_reset, std::memory_order_release);
@@ -505,7 +554,7 @@ void SCQP<T>::fixState() {
         }
 
         if (tail_.compare_exchange_weak(t, h, std::memory_order_release,
-                                       std::memory_order_relaxed)) {
+                                        std::memory_order_relaxed)) {
             return;
         }
     }

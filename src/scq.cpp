@@ -1,13 +1,11 @@
-#include <lscq/scq.hpp>
-
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <lscq/detail/atomic_or.hpp>
 #include <lscq/detail/bit.hpp>
 #include <lscq/detail/likely.hpp>
 #include <lscq/detail/ncq_impl.hpp>
-
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
+#include <lscq/scq.hpp>
 #include <new>
 
 namespace lscq {
@@ -21,9 +19,7 @@ inline bool cycle_less(std::uint64_t a, std::uint64_t b) noexcept {
     return static_cast<std::int64_t>(a - b) < 0;
 }
 
-constexpr bool is_power_of_two(std::size_t v) noexcept {
-    return v != 0 && (v & (v - 1)) == 0;
-}
+constexpr bool is_power_of_two(std::size_t v) noexcept { return v != 0 && (v & (v - 1)) == 0; }
 
 constexpr std::size_t round_up_pow2(std::size_t v) noexcept {
     if (v <= 1) {
@@ -153,7 +149,19 @@ T SCQ<T>::dequeue() {
 
     // Figure 8 line 24: negative threshold is a fast empty check.
     if (LSCQ_UNLIKELY(threshold_.load(std::memory_order_acquire) < 0)) {
-        return kEmpty;
+        // Threshold exhausted - check if queue is truly empty before returning kEmpty.
+        // This handles the case where producers have completed but queue still has elements.
+        const std::uint64_t head_now = head_.load(std::memory_order_acquire);
+        const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
+
+        // If tail > head, queue is not empty - reset threshold and continue.
+        if (tail_now > head_now) {
+            threshold_.store(threshold_reset, std::memory_order_release);
+            // Fall through to normal dequeue logic
+        } else {
+            // Queue appears empty or threshold legitimately exhausted
+            return kEmpty;
+        }
     }
 
     while (true) {
@@ -180,11 +188,12 @@ T SCQ<T>::dequeue() {
                 return static_cast<T>(value);
             }
 
-            // Default: clear IsSafe (Figure 8 line 33). If empty, advance Cycle to Cycle(H) and preserve IsSafe
-            // (Figure 8 line 35).
+            // Default: clear IsSafe (Figure 8 line 33). If empty, advance Cycle to Cycle(H) and
+            // preserve IsSafe (Figure 8 line 35).
             Entry desired{pack_cycle_flags(cycle_e, false), ent.index_or_ptr};
             if (ent.index_or_ptr == bottom_) {
-                desired = Entry{pack_cycle_flags(cycle_h, unpack_is_safe(ent.cycle_flags)), bottom_};
+                desired =
+                    Entry{pack_cycle_flags(cycle_h, unpack_is_safe(ent.cycle_flags)), bottom_};
             }
 
             if (cycle_less(cycle_e, cycle_h)) {
@@ -205,7 +214,14 @@ T SCQ<T>::dequeue() {
             if (next <= 0) {
                 const std::uint64_t head_now = head_.load(std::memory_order_acquire);
                 const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
-                if (head_now > tail_now && (head_now - tail_now) > scqsize) {
+
+                // Reset threshold if queue might not be empty, but don't retry here
+                // to avoid head incrementing again (entry check will handle retry)
+                if (tail_now > head_now) {
+                    threshold_.store(threshold_reset, std::memory_order_release);
+                }
+                // Queue appears empty or severely lagging - call fixState if needed
+                else if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                     fixState();
                     threshold_.store(threshold_reset, std::memory_order_release);
                 }
@@ -213,13 +229,21 @@ T SCQ<T>::dequeue() {
             return kEmpty;
         }
 
-        // Dequeue retry optimization: spin for a bounded number of iterations (threshold) before returning empty.
+        // Dequeue retry optimization: spin for a bounded number of iterations (threshold) before
+        // returning empty.
         const std::int64_t prev = threshold_.fetch_sub(1, std::memory_order_acq_rel);
         const std::int64_t next = prev - 1;
         if (LSCQ_UNLIKELY(next <= 0)) {
             const std::uint64_t head_now = head_.load(std::memory_order_acquire);
             const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
-            if (head_now > tail_now && (head_now - tail_now) > scqsize) {
+
+            // Reset threshold if queue might not be empty, but don't retry here
+            // to avoid head incrementing again (entry check will handle retry)
+            if (tail_now > head_now) {
+                threshold_.store(threshold_reset, std::memory_order_release);
+            }
+            // Queue appears empty or severely lagging - call fixState if needed
+            else if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                 fixState();
                 threshold_.store(threshold_reset, std::memory_order_release);
             }
@@ -241,7 +265,7 @@ void SCQ<T>::fixState() {
         }
 
         if (tail_.compare_exchange_weak(t, h, std::memory_order_release,
-                                       std::memory_order_relaxed)) {
+                                        std::memory_order_relaxed)) {
             return;
         }
     }
