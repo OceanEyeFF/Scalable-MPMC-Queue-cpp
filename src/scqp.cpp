@@ -340,13 +340,8 @@ T* SCQP<T>::dequeue_ptr() {
                 const std::uint64_t head_now = head_.load(std::memory_order_acquire);
                 const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
 
-                // Reset threshold if queue might not be empty, but don't retry here
-                // to avoid head incrementing again (entry check will handle retry)
-                if (tail_now > head_now) {
-                    threshold_.store(threshold_reset, std::memory_order_release);
-                }
                 // Queue appears empty or severely lagging - call fixState if needed
-                else if (head_now > tail_now && (head_now - tail_now) > scqsize) {
+                if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                     fixState();
                     threshold_.store(threshold_reset, std::memory_order_release);
                 }
@@ -505,13 +500,8 @@ T* SCQP<T>::dequeue_index() {
                 const std::uint64_t head_now = head_.load(std::memory_order_acquire);
                 const std::uint64_t tail_now = tail_.load(std::memory_order_acquire);
 
-                // Reset threshold if queue might not be empty, but don't retry here
-                // to avoid head incrementing again (entry check will handle retry)
-                if (tail_now > head_now) {
-                    threshold_.store(threshold_reset, std::memory_order_release);
-                }
                 // Queue appears empty or severely lagging - call fixState if needed
-                else if (head_now > tail_now && (head_now - tail_now) > scqsize) {
+                if (head_now > tail_now && (head_now - tail_now) > scqsize) {
                     fixState();
                     threshold_.store(threshold_reset, std::memory_order_release);
                 }

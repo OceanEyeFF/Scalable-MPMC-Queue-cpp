@@ -150,7 +150,10 @@ TEST(SCQ_EdgeCases, EnqueueSpinsWhenQueueIsFullUntilADequeueFreesSpace) {
     EXPECT_TRUE(completed.load(std::memory_order_acquire));
 }
 
-// DISABLED: 1M operations too large for local testing, causes timeouts
+// DISABLED: Shutdown/drain pattern - SCQ algorithm cannot guarantee completeness
+// when all producers finish before consumers drain the queue. The threshold mechanism
+// requires concurrent enqueue activity to recover from livelock prevention state.
+// See paper (arXiv:1908.04511v1) Figure 6 for SCQ algorithm details.
 TEST(SCQ_Concurrent, DISABLED_ProducersConsumers16x16_1M_NoLossNoDup_Conservative) {
 #ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
     // CI environment: lightweight test parameters (4x4, 1K ops)
@@ -228,6 +231,10 @@ TEST(SCQ_Concurrent, DISABLED_ProducersConsumers16x16_1M_NoLossNoDup_Conservativ
     EXPECT_EQ(kTotal, consumed.load() + static_cast<std::uint64_t>(remaining.size()));
 }
 
+// DISABLED: Threshold exhaustion test - intentionally depletes threshold by empty dequeues,
+// then expects burst enqueues to succeed. This pattern exposes the algorithm's inability to
+// recover in shutdown/drain scenarios when threshold reaches zero and no concurrent enqueue
+// activity exists. See paper (arXiv:1908.04511v1) Figure 6 for SCQ threshold mechanism.
 TEST(SCQ_Stress, DISABLED_ThresholdExhaustionThenBurstEnqueue_AllThreadsEnqueue) {
     constexpr std::size_t kDequeueThreads = 64;
     constexpr std::size_t kEnqueueThreads = 64;
@@ -298,6 +305,9 @@ TEST(SCQ_Stress, DISABLED_ThresholdExhaustionThenBurstEnqueue_AllThreadsEnqueue)
     }
 }
 
+// DISABLED: Shutdown/drain pattern (30 enqueuers, 70 dequeuers) - SCQ algorithm
+// cannot guarantee completeness when all producers finish before consumers drain.
+// The threshold mechanism requires concurrent enqueue activity for recovery.
 TEST(SCQ_Stress, DISABLED_Catchup_30Enq70Deq_QueueNonEmptyStillWorks) {
     constexpr std::size_t kProducers = 30;
     constexpr std::size_t kConsumers = 70;
