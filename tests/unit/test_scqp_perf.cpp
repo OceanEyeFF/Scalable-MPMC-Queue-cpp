@@ -75,7 +75,8 @@ inline std::vector<std::atomic<std::uint64_t>> make_atomic_bitmap(std::size_t bi
 // Performance benchmark: Compare different queue sizes on AMD Ryzen 9 5900X
 // Tests 12P+12C @ 1200 elements with queue sizes: 2K, 4K, 8K, 16K, 32K
 // Uses 12P+12C (24 threads total) to match 5900X's 24 threads and avoid cross-CCD scheduling
-TEST(SCQP_Performance, QueueSizeComparison_12P12C_1200_5900X) {
+// DISABLED: Performance benchmarks should not run in CI (unstable environment, takes too long)
+TEST(SCQP_Performance, DISABLED_QueueSizeComparison_12P12C_1200_5900X) {
     if (!lscq::has_cas2_support()) {
         GTEST_SKIP() << "CAS2 not supported - skipping performance benchmark";
     }
