@@ -437,9 +437,17 @@ TEST(SCQP_Concurrent, DEBUG_4P8C_256_UnbalancedConsumers) {
 
 // Fallback mode test: Reduced to 1K scale to verify no deadlock/livelock
 TEST(SCQP_Concurrent, ProducersConsumers16x16_1K_NoLossNoDup_Fallback) {
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (4x4, 256 ops)
+    constexpr std::size_t kProducers = 4;
+    constexpr std::size_t kConsumers = 4;
+    constexpr std::uint64_t kTotal = 256;
+#else
+    // Local/full test environment (16x16, 1K ops)
     constexpr std::size_t kProducers = 16;
     constexpr std::size_t kConsumers = 16;
-    constexpr std::uint64_t kTotal = 1'024;  // 1K operations (1024 % 16 = 0)
+    constexpr std::uint64_t kTotal = 1'024;
+#endif
     static_assert(kTotal % kProducers == 0);
     constexpr std::uint64_t kItersPerProducer = kTotal / kProducers;
 
@@ -516,9 +524,17 @@ TEST(SCQP_Concurrent, DEBUG_16P16C_1K_ReasonableQueueSize) {
         GTEST_SKIP() << "CAS2 not supported - skipping";
     }
 
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (4x4, 256 ops)
+    constexpr std::size_t kProducers = 4;
+    constexpr std::size_t kConsumers = 4;
+    constexpr std::uint64_t kTotal = 256;
+#else
+    // Local/full test environment (16x16, 1K ops)
     constexpr std::size_t kProducers = 16;
     constexpr std::size_t kConsumers = 16;
-    constexpr std::uint64_t kTotal = 1'024;  // 1K operations
+    constexpr std::uint64_t kTotal = 1'024;
+#endif
     static_assert(kTotal % kProducers == 0);
     constexpr std::uint64_t kItersPerProducer = kTotal / kProducers;
 
@@ -790,9 +806,17 @@ TEST(SCQP_Concurrent, ProducersConsumers16x16_1K_NoLossNoDup_NativeCAS2) {
                         "(G3.1 target)";
     }
 
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (4x4, 256 ops)
+    constexpr std::size_t kProducers = 4;
+    constexpr std::size_t kConsumers = 4;
+    constexpr std::uint64_t kTotal = 256;
+#else
+    // Local/full test environment (16x16, 1K ops)
     constexpr std::size_t kProducers = 16;
     constexpr std::size_t kConsumers = 16;
-    constexpr std::uint64_t kTotal = 1'024;  // 1K operations (1024 % 16 = 0)
+    constexpr std::uint64_t kTotal = 1'024;
+#endif
     static_assert(kTotal % kProducers == 0);
     constexpr std::uint64_t kItersPerProducer = kTotal / kProducers;
 

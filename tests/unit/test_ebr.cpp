@@ -257,8 +257,15 @@ TEST(EBR_Concurrent, StressTestManyNodesManThreads) {
     lscq::EBRManager ebr;
     TestNode::delete_count.store(0, std::memory_order_relaxed);
 
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (4 threads × 250 = 1K nodes)
+    constexpr int kNumThreads = 4;
+    constexpr int kNodesPerThread = 250;
+#else
+    // Local/full test environment (16 threads × 500 = 8K nodes)
     constexpr int kNumThreads = 16;
     constexpr int kNodesPerThread = 500;
+#endif
 
     std::atomic<int> ready_count{0};
     std::atomic<bool> start{false};

@@ -132,13 +132,18 @@ TEST(EdgeCases, EnqueueSkipsSlotWhenTailAppearsFull) {
 }
 
 TEST(ConcurrentEnqueue, EightThreadsEnqueue80000NoLossNoDup) {
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (4 threads × 2500 = 10K ops)
+    constexpr std::size_t kThreads = 4;
+    constexpr std::uint64_t kItersPerThread = 2'500;
+    lscq::NCQ<std::uint64_t> q(16384);  // 16K capacity for 10K ops
+#else
+    // Local/full test environment (8 threads × 10000 = 80K ops)
     constexpr std::size_t kThreads = 8;
-    constexpr std::uint64_t kItersPerThread = 10000;
+    constexpr std::uint64_t kItersPerThread = 10'000;
+    lscq::NCQ<std::uint64_t> q(131072);  // 128K capacity for 80K ops
+#endif
     constexpr std::uint64_t kTotal = kThreads * kItersPerThread;
-
-    // Keep capacity comfortably above the maximum expected occupancy to avoid pathological "full"
-    // behavior.
-    lscq::NCQ<std::uint64_t> q(131072);
 
     SpinStart gate;
     std::vector<std::thread> threads;
@@ -171,12 +176,20 @@ TEST(ConcurrentEnqueue, EightThreadsEnqueue80000NoLossNoDup) {
 }
 
 TEST(ConcurrentEnqueueDequeue, FourProducersFourConsumersConserveCountNoDup) {
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (2P + 2C, 2 × 2500 = 5K ops)
+    constexpr std::size_t kProducers = 2;
+    constexpr std::size_t kConsumers = 2;
+    constexpr std::uint64_t kItersPerProducer = 2'500;
+    lscq::NCQ<std::uint64_t> q(8192);  // 8K capacity for 5K ops
+#else
+    // Local/full test environment (4P + 4C, 4 × 10000 = 40K ops)
     constexpr std::size_t kProducers = 4;
     constexpr std::size_t kConsumers = 4;
-    constexpr std::uint64_t kItersPerProducer = 10000;
+    constexpr std::uint64_t kItersPerProducer = 10'000;
+    lscq::NCQ<std::uint64_t> q(131072);  // 128K capacity for 40K ops
+#endif
     constexpr std::uint64_t kTotal = kProducers * kItersPerProducer;
-
-    lscq::NCQ<std::uint64_t> q(131072);
 
     SpinStart gate;
     std::atomic<std::uint64_t> consumed{0};

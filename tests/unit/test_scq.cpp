@@ -151,14 +151,23 @@ TEST(SCQ_EdgeCases, EnqueueSpinsWhenQueueIsFullUntilADequeueFreesSpace) {
 }
 
 TEST(SCQ_Concurrent, ProducersConsumers16x16_1M_NoLossNoDup_Conservative) {
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (4x4, 1K ops)
+    constexpr std::size_t kProducers = 4;
+    constexpr std::size_t kConsumers = 4;
+    constexpr std::uint64_t kTotal = 1'024;
+    // Values must be < bottom_ (= SCQSIZE - 1), so pick a ring size > kTotal.
+    lscq::SCQ<std::uint64_t> q(2048);  // 2K ring size for 1K ops
+#else
+    // Local/full test environment (16x16, 1M ops)
     constexpr std::size_t kProducers = 16;
     constexpr std::size_t kConsumers = 16;
     constexpr std::uint64_t kTotal = 1'000'000;
-    static_assert(kTotal % kProducers == 0);
-    constexpr std::uint64_t kItersPerProducer = kTotal / kProducers;
-
     // Values must be < bottom_ (= SCQSIZE - 1), so pick a ring size > kTotal.
     lscq::SCQ<std::uint64_t> q(1u << 20);  // 1,048,576
+#endif
+    static_assert(kTotal % kProducers == 0);
+    constexpr std::uint64_t kItersPerProducer = kTotal / kProducers;
     ASSERT_GT(q.bottom_, kTotal);
 
     SpinStart gate;
