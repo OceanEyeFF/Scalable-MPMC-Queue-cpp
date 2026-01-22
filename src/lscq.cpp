@@ -1,5 +1,4 @@
 #include <lscq/lscq.hpp>
-
 #include <thread>  // for std::this_thread::yield()
 
 namespace lscq {
@@ -9,8 +8,7 @@ namespace lscq {
 // ============================================================================
 
 template <class T>
-LSCQ<T>::Node::Node(std::size_t scqsize)
-    : scqp(scqsize), next(nullptr), finalized(false) {}
+LSCQ<T>::Node::Node(std::size_t scqsize) : scqp(scqsize), next(nullptr), finalized(false) {}
 
 // ============================================================================
 // LSCQ Implementation
@@ -56,19 +54,15 @@ bool LSCQ<T>::enqueue(T* ptr) {
         // 2. SCQP is full, execute Finalize mechanism
         bool expected_finalized = false;
         if (tail->finalized.compare_exchange_strong(
-                expected_finalized, true,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire)) {
-
+                expected_finalized, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
             // 2.1 Create a new node
             Node* new_node = new Node(scqsize_);
 
             // 2.2 Link to tail->next
             Node* expected_next = nullptr;
-            if (!tail->next.compare_exchange_strong(
-                    expected_next, new_node,
-                    std::memory_order_acq_rel,
-                    std::memory_order_acquire)) {
+            if (!tail->next.compare_exchange_strong(expected_next, new_node,
+                                                    std::memory_order_acq_rel,
+                                                    std::memory_order_acquire)) {
                 // Another thread already linked a node
                 delete new_node;
             }
@@ -77,10 +71,8 @@ bool LSCQ<T>::enqueue(T* ptr) {
         // 3. Advance tail_ pointer
         Node* next = tail->next.load(std::memory_order_acquire);
         if (next != nullptr) {
-            tail_.compare_exchange_strong(
-                tail, next,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire);
+            tail_.compare_exchange_strong(tail, next, std::memory_order_acq_rel,
+                                          std::memory_order_acquire);
         } else {
             // next not set yet, yield to allow the finalizing thread to complete
             std::this_thread::yield();
@@ -152,10 +144,8 @@ T* LSCQ<T>::dequeue() {
             wait_retries = 0;
 
             // Advance head_ pointer
-            if (head_.compare_exchange_strong(
-                    head, next,
-                    std::memory_order_acq_rel,
-                    std::memory_order_acquire)) {
+            if (head_.compare_exchange_strong(head, next, std::memory_order_acq_rel,
+                                              std::memory_order_acquire)) {
                 // Successfully advanced head, retire the old node
                 ebr_.retire(head);
             }

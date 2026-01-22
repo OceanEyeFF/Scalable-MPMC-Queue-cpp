@@ -291,8 +291,8 @@ TEST(LSCQ_Concurrent, DISABLED_StressTestManyThreadsLargeWorkload) {
 
     // Producer-consumer separated model (LSCQ design pattern)
     // Producers ensure continuous enqueue operations for threshold recovery
-    constexpr std::size_t kNumProducers = kNumThreads / 2;  // 8 producers
-    constexpr std::size_t kNumConsumers = kNumThreads / 2;  // 8 consumers
+    constexpr std::size_t kNumProducers = kNumThreads / 2;          // 8 producers
+    constexpr std::size_t kNumConsumers = kNumThreads / 2;          // 8 consumers
     constexpr std::uint64_t kProducerOps = kTotal / kNumProducers;  // Each producer: 100k ops
 
     // Producer threads: continuously enqueue
