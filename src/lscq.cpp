@@ -108,35 +108,62 @@ T* LSCQ<T>::dequeue() {
             return result;
         }
 
-        // 2. SCQP is empty, check if we should advance head
+        // 2. dequeue() returned nullptr - check next and finalized status
         Node* next = head->next.load(std::memory_order_acquire);
+        bool is_finalized = head->finalized.load(std::memory_order_acquire);
 
-        if (next == nullptr) {
-            // Check if the node is finalized
-            bool is_finalized = head->finalized.load(std::memory_order_acquire);
-            if (!is_finalized) {
-                // Truly empty queue
-                return nullptr;
-            }
-            // finalized but next not set yet, yield to allow enqueue thread to complete
-            if (++wait_retries > MAX_WAIT_RETRIES) {
-                // Safety valve: avoid infinite wait, return nullptr and let caller retry
-                return nullptr;
-            }
-            std::this_thread::yield();
-            continue;
+        // 3. Only return nullptr if truly empty: not finalized AND no next node
+        if (!is_finalized && next == nullptr) {
+            // Single node, not finalized, queue is truly empty
+            return nullptr;
         }
 
-        // Reset wait counter when we successfully find next
-        wait_retries = 0;
+        // 4. Otherwise (finalized OR has next), retry dequeue to handle threshold false negatives
+        constexpr int MAX_SCQP_RETRIES = 3;
+        for (int retry = 0; retry < MAX_SCQP_RETRIES; ++retry) {
+            std::this_thread::yield();  // Allow enqueue to reset threshold
+            T* retry_result = head->scqp.dequeue();
+            if (retry_result != nullptr) {
+                return retry_result;
+            }
+        }
 
-        // 3. Advance head_ pointer
-        if (head_.compare_exchange_strong(
-                head, next,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire)) {
-            // Successfully advanced head, retire the old node
-            ebr_.retire(head);
+        // 5. If node is finalized, verify empty and advance head
+        if (is_finalized) {
+            // Multiple retries failed - verify SCQP is truly empty before advancing
+            if (!head->scqp.is_empty()) {
+                // SCQP still has elements, continue retrying
+                std::this_thread::yield();
+                continue;
+            }
+
+            // SCQP is empty and finalized, safe to advance head
+            if (next == nullptr) {
+                // finalized but next not set yet, yield to allow enqueue thread to complete
+                if (++wait_retries > MAX_WAIT_RETRIES) {
+                    // Safety valve: avoid infinite wait, return nullptr and let caller retry
+                    return nullptr;
+                }
+                std::this_thread::yield();
+                continue;
+            }
+
+            // Reset wait counter when we successfully find next
+            wait_retries = 0;
+
+            // Advance head_ pointer
+            if (head_.compare_exchange_strong(
+                    head, next,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                // Successfully advanced head, retire the old node
+                ebr_.retire(head);
+            }
+        } else {
+            // 6. Not finalized but has next (unusual state) or retry failed
+            // Continue retrying instead of returning nullptr
+            std::this_thread::yield();
+            continue;
         }
     }
 }
