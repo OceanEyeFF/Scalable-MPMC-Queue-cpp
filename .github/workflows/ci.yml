@@ -211,6 +211,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
             -DCMAKE_C_COMPILER=${{ matrix.cc }} \
             -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_CXX_FLAGS="-DLSCQ_CI_LIGHTWEIGHT_TESTS" \
             -DLSCQ_ENABLE_SANITIZERS=${{ matrix.enable_sanitizers }} \
             -DLSCQ_BUILD_TESTS=${{ matrix.build_tests }} \
             -DLSCQ_BUILD_BENCHMARKS=OFF \
@@ -269,6 +270,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_FLAGS="-DLSCQ_CI_LIGHTWEIGHT_TESTS" \
             -DLSCQ_ENABLE_SANITIZERS=ON
           cmake --build build/ci/linux/asan
           ctest --test-dir build/ci/linux/asan --output-on-failure
@@ -283,7 +285,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++ \
             -DLSCQ_ENABLE_SANITIZERS=OFF \
             -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
-            -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -DLSCQ_CI_LIGHTWEIGHT_TESTS" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
           cmake --build build/ci/linux/tsan
           ctest --test-dir build/ci/linux/tsan --output-on-failure

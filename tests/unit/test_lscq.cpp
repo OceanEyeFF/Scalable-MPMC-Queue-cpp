@@ -192,9 +192,17 @@ TEST(LSCQ_NodeExpansion, FinalizeTriggersNewNode) {
 // ============================================================================
 
 TEST(LSCQ_Concurrent, MPMC_CorrectnessBitmap) {
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters
+    constexpr std::size_t kProducers = 2;
+    constexpr std::size_t kConsumers = 2;
+    constexpr std::uint64_t kTotal = 2'500;
+#else
+    // Local/full test environment
     constexpr std::size_t kProducers = 4;
     constexpr std::size_t kConsumers = 4;
     constexpr std::uint64_t kTotal = 10'000;
+#endif
     static_assert(kTotal % kProducers == 0);
     constexpr std::uint64_t kItersPerProducer = kTotal / kProducers;
 
@@ -410,8 +418,15 @@ TEST(LSCQ_Memory, NoLeaksWithEBR) {
 // ============================================================================
 
 TEST(LSCQ_ASan, ConcurrentEnqueueDequeueNoDataRace) {
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    // CI environment: lightweight test parameters (4 threads × 625 = 2500 ops)
+    constexpr std::size_t kNumThreads = 4;
+    constexpr std::uint64_t kOpsPerThread = 625;
+#else
+    // Local/full test environment (8 threads × 10000 = 80000 ops)
     constexpr std::size_t kNumThreads = 8;
     constexpr std::uint64_t kOpsPerThread = 10'000;
+#endif
     constexpr std::uint64_t kTotal = kNumThreads * kOpsPerThread;
 
     lscq::EBRManager ebr;
