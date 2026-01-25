@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <lscq/ebr.hpp>
 
+// @deprecated LSCQ now uses ObjectPool-based node recycling instead of EBR. This implementation is
+// retained for comparison and potential rollback.
+
 namespace lscq {
 
 thread_local EBRManager::ThreadState* EBRManager::tls_state_ = nullptr;

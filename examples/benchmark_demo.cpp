@@ -132,8 +132,8 @@ double bench_lscq(std::size_t scqsize, std::size_t producers, std::size_t consum
         storage[i] = static_cast<std::uint64_t>(i + 1);
     }
 
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> q(ebr, scqsize);
+    // LSCQ now uses ObjectPool internally (no EBRManager needed).
+    lscq::LSCQ<std::uint64_t> q(scqsize);
 
     StartGate gate;
     std::atomic<std::size_t> consumed{0};
@@ -178,7 +178,7 @@ double bench_lscq(std::size_t scqsize, std::size_t producers, std::size_t consum
         t.join();
     }
     const auto t1 = std::chrono::steady_clock::now();
-    (void)ebr.try_reclaim();
+    // Note: LSCQ manages node lifecycle internally via ObjectPool.
 
     const std::chrono::duration<double> dt = t1 - t0;
     return static_cast<double>(total_ops) / dt.count();

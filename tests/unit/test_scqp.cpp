@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <iomanip>
+#include <limits>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -106,6 +107,36 @@ inline bool ptr_to_index(const std::uint64_t* base, std::size_t count, const std
     return true;
 }
 
+template <class T>
+void expect_reset_state(lscq::SCQP<T>& q) {
+    const std::uint64_t scqsize = static_cast<std::uint64_t>(q.scqsize_);
+    const std::int64_t expected_threshold = static_cast<std::int64_t>((scqsize << 1u) - 1u);
+    const std::uint64_t expected_empty_index = std::numeric_limits<std::uint64_t>::max();
+    const std::uint64_t expected_cycle_flags = 1u;  // pack_cycle_flags(0, true)
+
+    EXPECT_EQ(q.head_.load(std::memory_order_relaxed), scqsize);
+    EXPECT_EQ(q.tail_.load(std::memory_order_relaxed), scqsize);
+    EXPECT_EQ(q.threshold_.load(std::memory_order_relaxed), expected_threshold);
+    EXPECT_EQ(q.deq_success_.load(std::memory_order_relaxed), 0u);
+    EXPECT_EQ(q.enq_success_.load(std::memory_order_relaxed), 0u);
+
+    if (q.is_using_fallback()) {
+        ASSERT_NE(q.entries_i_.get(), nullptr);
+        ASSERT_NE(q.ptr_array_.get(), nullptr);
+        for (std::size_t i = 0; i < q.scqsize_; ++i) {
+            EXPECT_EQ(q.entries_i_[i].cycle_flags, expected_cycle_flags);
+            EXPECT_EQ(q.entries_i_[i].index_or_ptr, expected_empty_index);
+            EXPECT_EQ(q.ptr_array_[i], nullptr);
+        }
+    } else {
+        ASSERT_NE(q.entries_p_.get(), nullptr);
+        for (std::size_t i = 0; i < q.scqsize_; ++i) {
+            EXPECT_EQ(q.entries_p_[i].cycle_flags, expected_cycle_flags);
+            EXPECT_EQ(q.entries_p_[i].ptr, nullptr);
+        }
+    }
+}
+
 }  // namespace
 
 TEST(SCQP_Basic, SequentialEnqueueDequeueFifo) {
@@ -153,6 +184,80 @@ TEST(SCQP_EdgeCases, EnqueueFailsWhenQueueIsFull) {
 
         values[q.scqsize_] = 123u;
         EXPECT_FALSE(q.enqueue(&values[q.scqsize_]));
+    }
+}
+
+TEST(SCQP_Reset, ResetEmptyQueue) {
+    for (const bool force_fallback : {false, true}) {
+        lscq::SCQP<std::uint64_t> q(64, force_fallback);
+        ASSERT_TRUE(q.is_empty());
+
+        ASSERT_TRUE(q.reset_for_reuse());
+        expect_reset_state(q);
+
+        std::uint64_t value = 123;
+        ASSERT_TRUE(q.enqueue(&value));
+        auto* p = q.dequeue();
+        ASSERT_NE(p, nullptr);
+        EXPECT_EQ(*p, value);
+        EXPECT_TRUE(q.is_empty());
+        EXPECT_EQ(q.dequeue(), nullptr);
+    }
+}
+
+TEST(SCQP_Reset, ResetAfterOperations) {
+    for (const bool force_fallback : {false, true}) {
+        lscq::SCQP<std::uint64_t> q(64, force_fallback);
+
+        std::vector<std::uint64_t> values(16);
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            values[i] = static_cast<std::uint64_t>(i);
+            ASSERT_TRUE(q.enqueue(&values[i]));
+        }
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            auto* p = q.dequeue();
+            ASSERT_NE(p, nullptr);
+            EXPECT_EQ(*p, values[i]);
+        }
+        ASSERT_TRUE(q.is_empty());
+
+        ASSERT_TRUE(q.reset_for_reuse());
+        expect_reset_state(q);
+
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            values[i] = static_cast<std::uint64_t>(100 + i);
+            ASSERT_TRUE(q.enqueue(&values[i]));
+        }
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            auto* p = q.dequeue();
+            ASSERT_NE(p, nullptr);
+            EXPECT_EQ(*p, values[i]);
+        }
+        EXPECT_TRUE(q.is_empty());
+        EXPECT_EQ(q.dequeue(), nullptr);
+    }
+}
+
+TEST(SCQP_Reset, MultipleResetCycles) {
+    for (const bool force_fallback : {false, true}) {
+        lscq::SCQP<std::uint64_t> q(128, force_fallback);
+
+        for (std::uint64_t cycle = 0; cycle < 25; ++cycle) {
+            std::vector<std::uint64_t> values(32);
+            for (std::size_t i = 0; i < values.size(); ++i) {
+                values[i] = (cycle << 32u) | static_cast<std::uint64_t>(i);
+                ASSERT_TRUE(q.enqueue(&values[i]));
+            }
+            for (std::size_t i = 0; i < values.size(); ++i) {
+                auto* p = q.dequeue();
+                ASSERT_NE(p, nullptr);
+                EXPECT_EQ(*p, values[i]);
+            }
+            ASSERT_TRUE(q.is_empty());
+
+            ASSERT_TRUE(q.reset_for_reuse());
+            expect_reset_state(q);
+        }
     }
 }
 

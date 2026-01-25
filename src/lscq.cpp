@@ -3,6 +3,40 @@
 
 namespace lscq {
 
+namespace {
+class ActiveOpsGuard {
+   public:
+    explicit ActiveOpsGuard(std::atomic<int>& counter) noexcept : counter_(counter) {
+        counter_.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    ~ActiveOpsGuard() noexcept { counter_.fetch_sub(1, std::memory_order_acq_rel); }
+
+    ActiveOpsGuard(const ActiveOpsGuard&) = delete;
+    ActiveOpsGuard& operator=(const ActiveOpsGuard&) = delete;
+    ActiveOpsGuard(ActiveOpsGuard&&) = delete;
+    ActiveOpsGuard& operator=(ActiveOpsGuard&&) = delete;
+
+   private:
+    std::atomic<int>& counter_;
+};
+
+template <class T>
+inline void prepare_node_for_use(typename LSCQ<T>::Node* node, std::size_t scqsize) {
+    if (node == nullptr) {
+        return;
+    }
+
+    node->next.store(nullptr, std::memory_order_relaxed);
+    node->finalized.store(false, std::memory_order_relaxed);
+
+    if (!node->scqp.reset_for_reuse()) {
+        node->scqp.~SCQP<T>();
+        new (&node->scqp) SCQP<T>(scqsize);
+    }
+}
+}  // namespace
+
 // ============================================================================
 // Node Implementation
 // ============================================================================
@@ -15,23 +49,45 @@ LSCQ<T>::Node::Node(std::size_t scqsize) : scqp(scqsize), next(nullptr), finaliz
 // ============================================================================
 
 template <class T>
-LSCQ<T>::LSCQ(EBRManager& ebr, std::size_t scqsize)
-    : head_(nullptr), tail_(nullptr), ebr_(ebr), scqsize_(scqsize) {
+LSCQ<T>::LSCQ(std::size_t scqsize)
+    : head_(nullptr),
+      tail_(nullptr),
+      scqsize_(scqsize),
+      pool_([scqsize] { return new Node(scqsize); }),
+      legacy_ebr_(nullptr) {
     // Create the initial node
-    Node* initial = new Node(scqsize_);
+    Node* initial = pool_.Get();
+    prepare_node_for_use<T>(initial, scqsize_);
     head_.store(initial, std::memory_order_relaxed);
     tail_.store(initial, std::memory_order_relaxed);
 }
 
 template <class T>
+LSCQ<T>::LSCQ(EBRManager& ebr, std::size_t scqsize) : LSCQ(scqsize) {
+    legacy_ebr_ = &ebr;
+}
+
+template <class T>
 LSCQ<T>::~LSCQ() {
-    // Reclaim all nodes in the linked list
+    closing_.store(true, std::memory_order_release);
+
+    while (active_ops_.load(std::memory_order_acquire) > 0) {
+        std::this_thread::yield();
+    }
+
+    // Reclaim all nodes in the linked list, then clear the pool (which also contains
+    // previously retired nodes).
     Node* current = head_.load(std::memory_order_relaxed);
     while (current != nullptr) {
         Node* next = current->next.load(std::memory_order_relaxed);
-        delete current;
+        pool_.Put(current);
         current = next;
     }
+
+    head_.store(nullptr, std::memory_order_relaxed);
+    tail_.store(nullptr, std::memory_order_relaxed);
+
+    pool_.Clear();
 }
 
 template <class T>
@@ -40,7 +96,16 @@ bool LSCQ<T>::enqueue(T* ptr) {
         return false;
     }
 
-    EpochGuard guard(ebr_);  // EBR critical section
+    if (closing_.load(std::memory_order_acquire)) {
+        return false;
+    }
+
+    ActiveOpsGuard active_guard(active_ops_);
+
+    // Re-check after publishing to active_ops_ to avoid a destructor race window.
+    if (closing_.load(std::memory_order_acquire)) {
+        return false;
+    }
 
     constexpr int MAX_RETRIES = 16;  // Increased for high-contention scenarios
     for (int retry = 0; retry < MAX_RETRIES; ++retry) {
@@ -56,7 +121,8 @@ bool LSCQ<T>::enqueue(T* ptr) {
         if (tail->finalized.compare_exchange_strong(
                 expected_finalized, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
             // 2.1 Create a new node
-            Node* new_node = new Node(scqsize_);
+            Node* new_node = pool_.Get();
+            prepare_node_for_use<T>(new_node, scqsize_);
 
             // 2.2 Link to tail->next
             Node* expected_next = nullptr;
@@ -64,7 +130,7 @@ bool LSCQ<T>::enqueue(T* ptr) {
                                                     std::memory_order_acq_rel,
                                                     std::memory_order_acquire)) {
                 // Another thread already linked a node
-                delete new_node;
+                pool_.Put(new_node);
             }
         }
 
@@ -85,7 +151,16 @@ bool LSCQ<T>::enqueue(T* ptr) {
 
 template <class T>
 T* LSCQ<T>::dequeue() {
-    EpochGuard guard(ebr_);  // EBR critical section
+    if (closing_.load(std::memory_order_acquire)) {
+        return nullptr;
+    }
+
+    ActiveOpsGuard active_guard(active_ops_);
+
+    // Re-check after publishing to active_ops_ to avoid a destructor race window.
+    if (closing_.load(std::memory_order_acquire)) {
+        return nullptr;
+    }
 
     // Maximum retries to prevent infinite wait when finalized but next not yet linked
     constexpr int MAX_WAIT_RETRIES = 1024;
@@ -146,8 +221,8 @@ T* LSCQ<T>::dequeue() {
             // Advance head_ pointer
             if (head_.compare_exchange_strong(head, next, std::memory_order_acq_rel,
                                               std::memory_order_acquire)) {
-                // Successfully advanced head, retire the old node
-                ebr_.retire(head);
+                // Successfully advanced head, return the old node to the pool
+                pool_.Put(head);
             }
         } else {
             // 6. Not finalized but has next (unusual state) or retry failed

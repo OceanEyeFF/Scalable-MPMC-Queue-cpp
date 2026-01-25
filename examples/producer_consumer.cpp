@@ -128,8 +128,8 @@ int main(int argc, char** argv) {
               << "Batch size: " << opt.batch_size << "\n"
               << "SCQSIZE: " << opt.scqsize << "\n\n";
 
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> q(ebr, opt.scqsize);
+    // LSCQ now uses ObjectPool internally for node management (no EBRManager needed).
+    lscq::LSCQ<std::uint64_t> q(opt.scqsize);
 
     std::atomic<std::size_t> ready{0};
     std::atomic<bool> start{false};
@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
     const auto t1 = std::chrono::steady_clock::now();
 
     const std::chrono::duration<double> dt = t1 - t0;
-    (void)ebr.try_reclaim();
+    // Note: LSCQ manages node lifecycle internally via ObjectPool.
 
     const std::size_t produced_n = produced.load(std::memory_order_relaxed);
     const std::size_t consumed_n = consumed.load(std::memory_order_relaxed);

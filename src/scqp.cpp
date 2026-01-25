@@ -1,4 +1,5 @@
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -555,6 +556,54 @@ bool SCQP<T>::is_empty() const noexcept {
     const std::uint64_t head = deq_success_.load(std::memory_order_relaxed);
     const std::uint64_t tail = enq_success_.load(std::memory_order_relaxed);
     return tail <= head;
+}
+
+template <class T>
+bool SCQP<T>::reset_for_reuse() noexcept {
+    // Contract: only call when empty and with exclusive access (no concurrent enqueue/dequeue).
+    if (!is_empty()) {
+        assert(false && "SCQP::reset_for_reuse requires an empty queue with no concurrent users");
+        return false;
+    }
+
+    if (using_fallback_) {
+        for (std::size_t i = 0; i < scqsize_; ++i) {
+            if (entries_i_[i].index_or_ptr != kEmptyIndex || ptr_array_[i] != nullptr) {
+                assert(false &&
+                       "SCQP::reset_for_reuse requires all slots empty (no residual payloads)");
+                return false;
+            }
+        }
+    } else {
+        for (std::size_t i = 0; i < scqsize_; ++i) {
+            if (entries_p_[i].ptr != nullptr) {
+                assert(false &&
+                       "SCQP::reset_for_reuse requires all slots empty (no residual payloads)");
+                return false;
+            }
+        }
+    }
+
+    const std::uint64_t scqsize_u64 = static_cast<std::uint64_t>(scqsize_);
+    const std::int64_t threshold_reset = static_cast<std::int64_t>((scqsize_u64 << 1u) - 1u);
+
+    if (using_fallback_) {
+        for (std::size_t i = 0; i < scqsize_; ++i) {
+            entries_i_[i] = Entry{pack_cycle_flags(0, true), kEmptyIndex};
+            ptr_array_[i] = nullptr;
+        }
+    } else {
+        for (std::size_t i = 0; i < scqsize_; ++i) {
+            entries_p_[i] = EntryP{pack_cycle_flags(0, true), nullptr};
+        }
+    }
+
+    head_.store(scqsize_u64, std::memory_order_relaxed);
+    tail_.store(scqsize_u64, std::memory_order_relaxed);
+    threshold_.store(threshold_reset, std::memory_order_relaxed);
+    deq_success_.store(0, std::memory_order_relaxed);
+    enq_success_.store(0, std::memory_order_relaxed);
+    return true;
 }
 
 template class lscq::SCQP<std::uint64_t>;

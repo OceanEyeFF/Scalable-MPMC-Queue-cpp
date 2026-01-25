@@ -6,7 +6,7 @@
  *
  * LSCQ is an unbounded multi-producer multi-consumer (MPMC) queue that chains multiple bounded
  * SCQP nodes. When the tail node becomes full, a new node is allocated and linked. When the head
- * node is drained, it is reclaimed using Epoch-Based Reclamation (EBR).
+ * node is drained, it is returned to an internal ObjectPool for reuse.
  */
 
 #ifndef LSCQ_LSCQ_HPP_
@@ -16,10 +16,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <lscq/config.hpp>
-#include <lscq/ebr.hpp>
+#include <lscq/object_pool.hpp>
 #include <lscq/scqp.hpp>
 
 namespace lscq {
+
+class EBRManager;  // Legacy (backward-compat) constructor overload only.
 
 /**
  * @class LSCQ
@@ -27,12 +29,13 @@ namespace lscq {
  *
  * LSCQ is an unbounded multi-producer multi-consumer (MPMC) queue that chains
  * multiple SCQP nodes together. When a node becomes full, a new node is created
- * and linked to the tail. Empty nodes at the head are reclaimed using EBR.
+ * and linked to the tail. Empty nodes at the head are returned to an internal ObjectPool for
+ * reuse.
  *
  * Key features:
  * - Unbounded capacity (grows dynamically)
  * - Lock-free operations (enqueue/dequeue)
- * - Safe memory reclamation via EBR
+ * - Node recycling via ObjectPool
  * - Cache-line aligned to minimize false sharing
  *
  * @tparam T Pointee type. The queue stores pointers to T (T*).
@@ -48,8 +51,7 @@ namespace lscq {
  *
  * Example:
  * @code
- * lscq::EBRManager ebr;
- * lscq::LSCQ<std::uint64_t> q(ebr, 256);  // scqsize
+ * lscq::LSCQ<std::uint64_t> q(256);  // scqsize
  *
  * q.enqueue(new std::uint64_t(123));
  * if (auto* p = q.dequeue()) {
@@ -90,13 +92,18 @@ class LSCQ {
     };
 
     /**
-     * @brief Construct an LSCQ with the given EBR manager and SCQP size
+     * @brief Construct an LSCQ with the given SCQP size
      *
-     * @param ebr Reference to the EBR manager for memory reclamation
      * @param scqsize Size of each SCQP node (default: config::DEFAULT_SCQSIZE)
      *
-     * @note The EBR manager must outlive the LSCQ instance
      * @throws std::bad_alloc If allocating the initial node fails.
+     */
+    explicit LSCQ(std::size_t scqsize = config::DEFAULT_SCQSIZE);
+
+    /**
+     * @brief Backward-compatible constructor overload.
+     *
+     * The EBR parameter is ignored. Node memory management is handled internally via ObjectPool.
      */
     explicit LSCQ(EBRManager& ebr, std::size_t scqsize = config::DEFAULT_SCQSIZE);
 
@@ -132,7 +139,7 @@ class LSCQ {
      *
      * This operation is lock-free and thread-safe. If the current head node
      * is empty, it will attempt to advance to the next node (if available).
-     * Empty nodes are reclaimed using EBR.
+     * Empty nodes are returned to an internal ObjectPool for reuse.
      *
      * @return Pointer dequeued from the queue, or nullptr if the queue is empty (or if a bounded
      *         internal wait limit is hit while observing a finalized-but-not-yet-linked node).
@@ -143,8 +150,13 @@ class LSCQ {
     alignas(64) std::atomic<Node*> head_;  // Head of the linked list
     alignas(64) std::atomic<Node*> tail_;  // Tail of the linked list
 
-    EBRManager& ebr_;      // Reference to EBR manager for memory reclamation
-    std::size_t scqsize_;  // Size of each SCQP node
+    // Destructor-safety: prevent node reclamation while operations are active.
+    alignas(64) std::atomic<int> active_ops_{0};
+    alignas(64) std::atomic<bool> closing_{false};
+
+    std::size_t scqsize_;       // Size of each SCQP node
+    ObjectPool<Node> pool_;     // Node allocator/recycler (replaces EBR for LSCQ nodes)
+    EBRManager* legacy_ebr_;    // Optional legacy pointer (unused; kept for backward compatibility)
 };
 
 }  // namespace lscq

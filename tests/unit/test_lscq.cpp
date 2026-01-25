@@ -1,11 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
-#include <lscq/ebr.hpp>
-#include <lscq/lscq.hpp>
+#include <memory>
 #include <thread>
 #include <vector>
+
+#define private public
+#include <lscq/lscq.hpp>
+#undef private
 
 namespace {
 
@@ -77,6 +82,20 @@ inline bool ptr_to_index(const std::uint64_t* base, std::size_t count, const std
     return true;
 }
 
+inline std::size_t count_node_list(lscq::LSCQ<std::uint64_t>& queue) {
+    using Node = lscq::LSCQ<std::uint64_t>::Node;
+    std::size_t count = 0;
+    Node* cur = queue.head_.load(std::memory_order_acquire);
+    while (cur != nullptr) {
+        ++count;
+        if (count > 1'000'000u) {
+            break;
+        }
+        cur = cur->next.load(std::memory_order_acquire);
+    }
+    return count;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -84,30 +103,26 @@ inline bool ptr_to_index(const std::uint64_t* base, std::size_t count, const std
 // ============================================================================
 
 TEST(LSCQ_Basic, ConstructDestruct) {
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> queue(ebr, 256);
+    lscq::LSCQ<std::uint64_t> queue(256);
 
     // Should not crash
     SUCCEED();
 }
 
 TEST(LSCQ_Basic, EnqueueRejectsNullptr) {
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> queue(ebr, 256);
+    lscq::LSCQ<std::uint64_t> queue(256);
 
     EXPECT_FALSE(queue.enqueue(nullptr));
 }
 
 TEST(LSCQ_Basic, DequeueOnEmptyReturnsNullptr) {
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> queue(ebr, 256);
+    lscq::LSCQ<std::uint64_t> queue(256);
 
     EXPECT_EQ(queue.dequeue(), nullptr);
 }
 
 TEST(LSCQ_Basic, SequentialEnqueueDequeueFifo) {
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> queue(ebr, 256);
+    lscq::LSCQ<std::uint64_t> queue(256);
 
     std::vector<std::uint64_t> values(100);
     for (std::uint64_t i = 0; i < 100; ++i) {
@@ -129,9 +144,8 @@ TEST(LSCQ_Basic, SequentialEnqueueDequeueFifo) {
 // ============================================================================
 
 TEST(LSCQ_NodeExpansion, ExceedsInitialCapacity) {
-    lscq::EBRManager ebr;
     // Use a small SCQP size to force node expansion
-    lscq::LSCQ<std::uint64_t> queue(ebr, 64);
+    lscq::LSCQ<std::uint64_t> queue(64);
 
     std::vector<std::uint64_t> values(200);  // More than initial capacity
     for (std::uint64_t i = 0; i < 200; ++i) {
@@ -150,9 +164,8 @@ TEST(LSCQ_NodeExpansion, ExceedsInitialCapacity) {
 }
 
 TEST(LSCQ_NodeExpansion, FinalizeTriggersNewNode) {
-    lscq::EBRManager ebr;
     // Use tiny SCQP size to trigger finalization quickly
-    lscq::LSCQ<std::uint64_t> queue(ebr, 16);
+    lscq::LSCQ<std::uint64_t> queue(16);
 
     // Pre-allocate all values to avoid vector reallocation
     std::vector<std::uint64_t> values(150);
@@ -212,8 +225,7 @@ TEST(LSCQ_Concurrent, DISABLED_MPMC_CorrectnessBitmap) {
     static_assert(kTotal % kProducers == 0);
     constexpr std::uint64_t kItersPerProducer = kTotal / kProducers;
 
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> queue(ebr, 1024);
+    lscq::LSCQ<std::uint64_t> queue(1024);
 
     SpinStart gate;
     ErrorState err;
@@ -288,8 +300,7 @@ TEST(LSCQ_Concurrent, DISABLED_StressTestManyThreadsLargeWorkload) {
     constexpr std::uint64_t kOpsPerThread = 50'000;
     constexpr std::uint64_t kTotal = kNumThreads * kOpsPerThread;
 
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> queue(ebr, 2048);
+    lscq::LSCQ<std::uint64_t> queue(2048);
 
     SpinStart gate;
     ErrorState err;
@@ -363,61 +374,137 @@ TEST(LSCQ_Concurrent, DISABLED_StressTestManyThreadsLargeWorkload) {
 }
 
 // ============================================================================
-// Memory Reclamation Test (1 test case)
+// ObjectPool Integration Tests (3 test cases)
 // ============================================================================
 
-TEST(LSCQ_Memory, NoLeaksWithEBR) {
-    lscq::EBRManager ebr;
+TEST(LSCQ_ObjectPoolIntegration, ObjectPoolNodeReuse) {
+    // Use a tiny SCQP size to force node expansion and subsequent reuse.
+    constexpr std::size_t kScqSize = 16;
+    constexpr std::size_t kCount = 512;
 
-    {
-        lscq::LSCQ<std::uint64_t> queue(ebr, 64);
+    lscq::LSCQ<std::uint64_t> queue(kScqSize);
 
-        // Create a large vector to hold values
-        std::vector<std::uint64_t> values(1000);
-        for (std::size_t i = 0; i < 1000; ++i) {
-            values[i] = i;
-        }
-
-        // Enqueue 1000 elements, triggering multiple node allocations
-        for (std::size_t i = 0; i < 1000; ++i) {
-            ASSERT_TRUE(queue.enqueue(&values[i]));
-        }
-
-        // Dequeue half
-        for (std::size_t i = 0; i < 500; ++i) {
-            auto* p = queue.dequeue();
-            ASSERT_NE(p, nullptr);
-            EXPECT_EQ(*p, i);
-        }
-
-        // Trigger EBR reclamation multiple times
-        // This should retire and eventually reclaim old LSCQ nodes
-        for (int i = 0; i < 10; ++i) {
-            ebr.try_reclaim();
-        }
-
-        // Dequeue remaining
-        for (std::size_t i = 500; i < 1000; ++i) {
-            auto* p = queue.dequeue();
-            ASSERT_NE(p, nullptr);
-            EXPECT_EQ(*p, i);
-        }
-
-        EXPECT_EQ(queue.dequeue(), nullptr);
-
-        // Trigger more reclamation
-        for (int i = 0; i < 10; ++i) {
-            ebr.try_reclaim();
-        }
-    }  // LSCQ destructor should clean up remaining nodes
-
-    // Final EBR reclamation pass
-    for (int i = 0; i < 10; ++i) {
-        ebr.try_reclaim();
+    std::vector<std::uint64_t> values(kCount);
+    for (std::size_t i = 0; i < kCount; ++i) {
+        values[i] = static_cast<std::uint64_t>(i);
+        ASSERT_TRUE(queue.enqueue(&values[i]));
     }
 
-    // If we reach here without crashes, memory management is working
+    const std::size_t nodes_after_expand = count_node_list(queue);
+    ASSERT_GT(nodes_after_expand, 1u);
+
+    for (std::size_t i = 0; i < kCount; ++i) {
+        auto* p = queue.dequeue();
+        ASSERT_NE(p, nullptr);
+        EXPECT_EQ(*p, static_cast<std::uint64_t>(i));
+    }
+    EXPECT_EQ(queue.dequeue(), nullptr);
+
+    // Drained nodes should have been returned to the internal pool.
+    const std::size_t pool_before = queue.pool_.Size();
+    ASSERT_GT(pool_before, 0u);
+
+    // Trigger another expansion run. If nodes are being reused, pool size should decrease.
+    for (std::size_t i = 0; i < kCount; ++i) {
+        ASSERT_TRUE(queue.enqueue(&values[i]));
+    }
+    EXPECT_LT(queue.pool_.Size(), pool_before);
+
+    // Drain again (not strictly required, but keeps the test deterministic).
+    for (std::size_t i = 0; i < kCount; ++i) {
+        ASSERT_NE(queue.dequeue(), nullptr);
+    }
+    EXPECT_EQ(queue.dequeue(), nullptr);
+}
+
+TEST(LSCQ_ObjectPoolIntegration, DestructorSafety) {
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    constexpr std::size_t kThreads = 4;
+    constexpr std::size_t kIters = 10'000;
+#else
+    const std::size_t hc = std::max<std::size_t>(2u, std::thread::hardware_concurrency());
+    const std::size_t kThreads = std::min<std::size_t>(16u, hc);
+    constexpr std::size_t kIters = 25'000;
+#endif
+
+    std::vector<std::uint64_t> values(4096);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i] = static_cast<std::uint64_t>(i);
+    }
+
+    auto queue = std::make_unique<lscq::LSCQ<std::uint64_t>>(64);
+
+    SpinStart gate;
+    std::atomic<std::uint64_t> next{0};
+    std::atomic<bool> stop{false};
+
+    std::vector<std::thread> threads;
+    threads.reserve(kThreads);
+    for (std::size_t t = 0; t < kThreads; ++t) {
+        threads.emplace_back([&]() {
+            gate.arrive_and_wait();
+            for (std::size_t i = 0; i < kIters; ++i) {
+                if (stop.load(std::memory_order_relaxed)) {
+                    break;
+                }
+                const std::uint64_t idx = next.fetch_add(1, std::memory_order_relaxed);
+                (void)queue->enqueue(&values[static_cast<std::size_t>(idx % values.size())]);
+            }
+        });
+    }
+
+    gate.release_when_all_ready(kThreads);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    // Signal shutdown (matches the documented destruction precondition: no concurrent access
+    // during destruction). closing_ is set so in-flight operations can observe a consistent state.
+    queue->closing_.store(true, std::memory_order_release);
+    stop.store(true, std::memory_order_relaxed);
+
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    queue.reset();  // Should not hang/crash after a concurrent workload.
     SUCCEED();
+}
+
+TEST(LSCQ_ObjectPoolIntegration, NoMemoryLeak) {
+    // This test is validated under AddressSanitizer: any leaks/UAF in node reclamation
+    // will be reported by the sanitizer runtime.
+#ifdef LSCQ_CI_LIGHTWEIGHT_TESTS
+    constexpr std::size_t kRounds = 10;
+    constexpr std::size_t kCount = 1024;
+#else
+    constexpr std::size_t kRounds = 50;
+    constexpr std::size_t kCount = 4096;
+#endif
+
+    std::vector<std::uint64_t> values(kCount);
+    for (std::size_t i = 0; i < kCount; ++i) {
+        values[i] = static_cast<std::uint64_t>(i);
+    }
+
+    for (std::size_t round = 0; round < kRounds; ++round) {
+        lscq::LSCQ<std::uint64_t> queue(16);
+
+        for (std::size_t i = 0; i < kCount; ++i) {
+            ASSERT_TRUE(queue.enqueue(&values[i]));
+        }
+        for (std::size_t i = 0; i < kCount; ++i) {
+            ASSERT_NE(queue.dequeue(), nullptr);
+        }
+        ASSERT_EQ(queue.dequeue(), nullptr);
+
+        // Repeat once more to exercise pool reuse in the same instance.
+        for (std::size_t i = 0; i < kCount; ++i) {
+            ASSERT_TRUE(queue.enqueue(&values[i]));
+        }
+        for (std::size_t i = 0; i < kCount; ++i) {
+            ASSERT_NE(queue.dequeue(), nullptr);
+        }
+        ASSERT_EQ(queue.dequeue(), nullptr);
+    }
 }
 
 // ============================================================================
@@ -441,8 +528,7 @@ TEST(LSCQ_ASan, DISABLED_ConcurrentEnqueueDequeueNoDataRace) {
 #endif
     constexpr std::uint64_t kTotal = kNumThreads * kOpsPerThread;
 
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> queue(ebr, 512);
+    lscq::LSCQ<std::uint64_t> queue(512);
 
     SpinStart gate;
 
@@ -505,11 +591,6 @@ TEST(LSCQ_ASan, DISABLED_ConcurrentEnqueueDequeueNoDataRace) {
     }
 
     EXPECT_EQ(deq_count.load(), kTotal);
-
-    // Trigger EBR reclamation
-    for (int i = 0; i < 10; ++i) {
-        ebr.try_reclaim();
-    }
 
     // If ASan is enabled, any data race or use-after-free will be caught
     SUCCEED();

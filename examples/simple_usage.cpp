@@ -18,8 +18,8 @@ int main() {
     //   producer: create std::unique_ptr<T>, enqueue(ptr.get()), then release()
     //   consumer: dequeue() returns T*, wrap it into std::unique_ptr<T> and use it
     //
-    lscq::EBRManager ebr;
-    lscq::LSCQ<std::uint64_t> q(ebr, /*scqsize=*/1024);
+    // Note: LSCQ now uses ObjectPool internally for node management (no EBRManager needed).
+    lscq::LSCQ<std::uint64_t> q(/*scqsize=*/1024);
 
     // enqueue(nullptr) is an API error for LSCQ (it returns false).
     if (q.enqueue(nullptr)) {
@@ -53,8 +53,8 @@ int main() {
         std::cout << "  got " << *owned << "\n";
     }
 
-    const std::size_t reclaimed = ebr.try_reclaim();
-    std::cout << "[LSCQ] EBR reclaimed nodes: " << reclaimed << "\n\n";
+    // Note: LSCQ now manages node lifecycle internally via ObjectPool.
+    std::cout << "[LSCQ] Queue operations completed successfully.\n\n";
 
     // -----------------------------------------------------------------------------
     // 2) Other queues provided by this repo (single-thread demo)

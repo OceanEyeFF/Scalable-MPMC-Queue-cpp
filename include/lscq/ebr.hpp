@@ -7,6 +7,9 @@
  * Epoch-Based Reclamation is used to safely reclaim nodes removed from lock-free data structures.
  * Threads enter/exit critical sections to announce liveness; reclamation happens once all active
  * threads have advanced beyond the retirement epoch.
+ *
+ * @deprecated LSCQ now uses ObjectPool-based node recycling instead of EBR. This implementation is
+ * retained for comparison and potential rollback.
  */
 
 #ifndef LSCQ_EBR_HPP_
@@ -24,6 +27,8 @@ namespace lscq {
 /**
  * @class EBRManager
  * @brief Epoch-Based Reclamation (EBR) manager for safe memory reclamation.
+ *
+ * @deprecated Use ObjectPool-based node recycling instead.
  *
  * EBR is a memory reclamation technique that allows lock-free data structures
  * to safely reclaim memory. It works by tracking epochs (global time periods)
@@ -188,6 +193,8 @@ class EBRManager {
 /**
  * @class EpochGuard
  * @brief RAII guard for EBR critical sections.
+ *
+ * @deprecated Use ObjectPool-based node recycling instead.
  *
  * Automatically calls enter_critical() on construction and exit_critical() on destruction.
  *

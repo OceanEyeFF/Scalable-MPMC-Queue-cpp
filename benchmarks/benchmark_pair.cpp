@@ -37,12 +37,25 @@ static void BM_Pair(benchmark::State& state) {
     std::uint64_t seq = 0;
     for (auto _ : state) {
         const item_t it = ctx->make_item(state.thread_index(), seq++);
+
+        // Enqueue with retry limit
+        int enq_retries = 0;
         while (!ops::enqueue(*ctx->q, it)) {
+            if (++enq_retries > 100000) {
+                state.SkipWithError("Enqueue stuck - possible queue implementation issue");
+                return;
+            }
             std::this_thread::yield();
         }
 
+        // Dequeue with retry limit
         item_t out{};
+        int deq_retries = 0;
         while (!ops::dequeue(*ctx->q, out)) {
+            if (++deq_retries > 100000) {
+                state.SkipWithError("Dequeue stuck - possible queue implementation issue");
+                return;
+            }
             std::this_thread::yield();
         }
         benchmark::DoNotOptimize(out);

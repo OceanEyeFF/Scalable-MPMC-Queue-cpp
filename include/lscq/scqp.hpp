@@ -109,6 +109,21 @@ class SCQP {
      */
     bool is_empty() const noexcept;
 
+    /**
+     * @brief Reset the queue to its initial state for object reuse.
+     *
+     * This operation is intended for scenarios where an SCQP instance is stored in an object pool
+     * and later reused. It resets internal counters (head/tail), threshold, and clears all slot
+     * entries back to the same state as a freshly constructed SCQP of the same size/mode.
+     *
+     * @warning Not thread-safe. Must only be called when the queue is empty and there are no
+     * concurrent calls to @ref enqueue, @ref dequeue, or @ref is_empty.
+     *
+     * @return true if the reset was performed; false if the queue was not empty (or contained
+     * residual slot payloads) and therefore could not be safely reset.
+     */
+    bool reset_for_reuse() noexcept;
+
     /** @brief Return whether the queue is currently using the fallback implementation. */
     bool is_using_fallback() const noexcept { return using_fallback_; }
     /** @brief Return the ring size (SCQSIZE = 2n). */
