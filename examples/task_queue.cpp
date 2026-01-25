@@ -1,5 +1,3 @@
-#include <lscq/lscq.hpp>
-
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -7,6 +5,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <lscq/lscq.hpp>
 #include <memory>
 #include <string>
 #include <thread>
@@ -105,7 +104,8 @@ void enqueue_spin(lscq::LSCQ<std::uint64_t>& q, std::uint64_t* ptr, std::atomic<
     }
 }
 
-std::uint64_t do_work(std::uint64_t task_id, std::uint32_t producer, std::uint32_t work_units) noexcept {
+std::uint64_t do_work(std::uint64_t task_id, std::uint32_t producer,
+                      std::uint32_t work_units) noexcept {
     // Simple pseudo-work: a few integer mixes.
     std::uint64_t x = task_id ^ (static_cast<std::uint64_t>(producer) << 32);
     for (std::uint32_t i = 0; i < work_units; ++i) {
@@ -256,7 +256,8 @@ int main(int argc, char** argv) {
     std::cout << "Produced: " << produced_n << "\n"
               << "Consumed: " << consumed_n << "\n"
               << "Elapsed: " << dt.count() << " s\n"
-              << "Throughput: " << (static_cast<double>(consumed_n) / dt.count() / 1e6) << " Mtasks/s\n"
+              << "Throughput: " << (static_cast<double>(consumed_n) / dt.count() / 1e6)
+              << " Mtasks/s\n"
               << "Checksum (xor): " << checksum.load(std::memory_order_relaxed) << "\n";
 
     if (produced_n != total_tasks || consumed_n != total_tasks) {

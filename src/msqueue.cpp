@@ -1,6 +1,5 @@
-#include <lscq/msqueue.hpp>
-
 #include <cstdint>
+#include <lscq/msqueue.hpp>
 
 namespace lscq {
 
@@ -29,7 +28,7 @@ void MSQueue<T>::retire_node(Node* node) noexcept {
     do {
         node->retired_next = old;
     } while (!retired_.compare_exchange_weak(old, node, std::memory_order_release,
-                                            std::memory_order_relaxed));
+                                             std::memory_order_relaxed));
 }
 
 template <class T>
@@ -112,4 +111,3 @@ template class MSQueue<std::uint64_t>;
 template class MSQueue<std::uint32_t>;
 
 }  // namespace lscq
-

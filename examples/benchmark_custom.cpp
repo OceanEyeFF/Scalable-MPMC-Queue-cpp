@@ -1,14 +1,13 @@
-#include <lscq/cas2.hpp>
-#include <lscq/ebr.hpp>
-#include <lscq/lscq.hpp>
-#include <lscq/scqp.hpp>
-
 #include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <lscq/cas2.hpp>
+#include <lscq/ebr.hpp>
+#include <lscq/lscq.hpp>
+#include <lscq/scqp.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -16,8 +15,8 @@
 namespace {
 
 struct Options {
-    std::string queue = "lscq";          // lscq | scqp
-    std::size_t scqsize = 1024;          // ring size (2n)
+    std::string queue = "lscq";  // lscq | scqp
+    std::size_t scqsize = 1024;  // ring size (2n)
     std::size_t producers = 4;
     std::size_t consumers = 4;
     std::size_t ops_per_producer = 200000;
@@ -107,8 +106,7 @@ bool parse_args(int argc, char** argv, Options& opt) {
 
 template <class Queue>
 double run_mpmc_benchmark(Queue& q, std::size_t producers, std::size_t consumers,
-                          std::vector<std::uint64_t>& storage,
-                          std::size_t ops_per_producer) {
+                          std::vector<std::uint64_t>& storage, std::size_t ops_per_producer) {
     const std::size_t total_ops = producers * ops_per_producer;
 
     std::atomic<std::size_t> ready{0};
@@ -194,11 +192,13 @@ int main(int argc, char** argv) {
     if (opt.queue == "scqp") {
         lscq::SCQP<std::uint64_t> q(opt.scqsize);
         std::cout << "SCQP fallback: " << (q.is_using_fallback() ? "yes" : "no") << "\n";
-        ops_per_sec = run_mpmc_benchmark(q, opt.producers, opt.consumers, storage, opt.ops_per_producer);
+        ops_per_sec =
+            run_mpmc_benchmark(q, opt.producers, opt.consumers, storage, opt.ops_per_producer);
     } else {
         lscq::EBRManager ebr;
         lscq::LSCQ<std::uint64_t> q(ebr, opt.scqsize);
-        ops_per_sec = run_mpmc_benchmark(q, opt.producers, opt.consumers, storage, opt.ops_per_producer);
+        ops_per_sec =
+            run_mpmc_benchmark(q, opt.producers, opt.consumers, storage, opt.ops_per_producer);
         (void)ebr.try_reclaim();
     }
 

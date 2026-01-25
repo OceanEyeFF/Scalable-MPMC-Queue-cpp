@@ -1,5 +1,3 @@
-#include <lscq/lscq.hpp>
-
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -7,6 +5,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <lscq/lscq.hpp>
 #include <memory>
 #include <string>
 #include <thread>
@@ -95,7 +94,8 @@ bool parse_args(int argc, char** argv, Options& opt) {
         return false;
     }
 
-    if (opt.producers == 0 || opt.consumers == 0 || opt.items_per_producer == 0 || opt.batch_size == 0) {
+    if (opt.producers == 0 || opt.consumers == 0 || opt.items_per_producer == 0 ||
+        opt.batch_size == 0) {
         std::cerr << "Invalid: producers/consumers/items-per-producer/batch-size must be > 0\n";
         return false;
     }
@@ -272,7 +272,8 @@ int main(int argc, char** argv) {
     std::cout << "Produced: " << produced_n << "\n"
               << "Consumed: " << consumed_n << "\n"
               << "Elapsed: " << dt.count() << " s\n"
-              << "Throughput: " << (static_cast<double>(consumed_n) / dt.count() / 1e6) << " Mitems/s\n"
+              << "Throughput: " << (static_cast<double>(consumed_n) / dt.count() / 1e6)
+              << " Mitems/s\n"
               << "Checksum (sum): " << checksum_n << "\n";
 
     if (produced_n != total_items || consumed_n != total_items) {

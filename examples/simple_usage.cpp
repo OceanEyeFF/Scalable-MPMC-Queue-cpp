@@ -1,10 +1,9 @@
+#include <cstdint>
+#include <iostream>
 #include <lscq/lscq.hpp>
 #include <lscq/msqueue.hpp>
 #include <lscq/mutex_queue.hpp>
 #include <lscq/scq.hpp>
-
-#include <cstdint>
-#include <iostream>
 #include <memory>
 
 int main() {
@@ -120,4 +119,3 @@ int main() {
     std::cout << "Done.\n";
     return 0;
 }
-

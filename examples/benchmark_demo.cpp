@@ -1,11 +1,10 @@
-#include <lscq/lscq.hpp>
-
 #include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <lscq/lscq.hpp>
 #include <string>
 #include <thread>
 #include <vector>

@@ -1,9 +1,8 @@
+#include <cstdint>
+#include <iostream>
 #include <lscq/cas2.hpp>
 #include <lscq/scq.hpp>
 #include <lscq/scqp.hpp>
-
-#include <cstdint>
-#include <iostream>
 #include <vector>
 
 int main() {
@@ -54,4 +53,3 @@ int main() {
 
     return 0;
 }
-

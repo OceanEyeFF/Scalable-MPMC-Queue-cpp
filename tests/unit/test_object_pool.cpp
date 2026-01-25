@@ -118,10 +118,12 @@ TEST(ObjectPoolTest, ObjectReuse) {
 
 TEST(ObjectPoolTest, FactoryCreation) {
     std::atomic<std::size_t> created{0};
-    lscq::ObjectPool<int> pool([&] {
-        created.fetch_add(1, std::memory_order_relaxed);
-        return new int(123);
-    }, 1);
+    lscq::ObjectPool<int> pool(
+        [&] {
+            created.fetch_add(1, std::memory_order_relaxed);
+            return new int(123);
+        },
+        1);
 
     EXPECT_EQ(created.load(), 0u);
     int* p = pool.Get();
@@ -194,10 +196,12 @@ TEST(ObjectPoolTest, ClearPool) {
 
 TEST(ObjectPoolTest, PoolSize) {
     std::atomic<std::size_t> created{0};
-    lscq::ObjectPool<int> pool([&] {
-        created.fetch_add(1, std::memory_order_relaxed);
-        return new int(0);
-    }, 1);
+    lscq::ObjectPool<int> pool(
+        [&] {
+            created.fetch_add(1, std::memory_order_relaxed);
+            return new int(0);
+        },
+        1);
 
     EXPECT_EQ(pool.Size(), 0u);
 
@@ -318,10 +322,12 @@ TEST(ObjectPoolTest, ShardDistribution) {
 
 TEST(ObjectPoolTest, WorkStealing) {
     std::atomic<std::size_t> factory_calls{0};
-    lscq::ObjectPool<int> pool([&] {
-        factory_calls.fetch_add(1, std::memory_order_relaxed);
-        return new int(777);
-    }, 4);
+    lscq::ObjectPool<int> pool(
+        [&] {
+            factory_calls.fetch_add(1, std::memory_order_relaxed);
+            return new int(777);
+        },
+        4);
 
     const std::size_t local = pool.CurrentShardIndex();
     ASSERT_GE(pool.shards_.size(), 2u);
@@ -392,13 +398,15 @@ TEST(ObjectPoolTest, ShardCountZeroTreatedAsOne) {
 
 TEST(ObjectPoolTest, FactoryMayReturnNull) {
     std::atomic<int> calls{0};
-    lscq::ObjectPool<int> pool([&] {
-        const int c = calls.fetch_add(1, std::memory_order_relaxed);
-        if ((c % 2) == 0) {
-            return static_cast<int*>(nullptr);
-        }
-        return new int(c);
-    }, 1);
+    lscq::ObjectPool<int> pool(
+        [&] {
+            const int c = calls.fetch_add(1, std::memory_order_relaxed);
+            if ((c % 2) == 0) {
+                return static_cast<int*>(nullptr);
+            }
+            return new int(c);
+        },
+        1);
 
     EXPECT_EQ(pool.Get(), nullptr);
 
@@ -520,7 +528,8 @@ TEST(ObjectPoolTest, StressManyThreadsMixedOwnership) {
                         ok.store(false, std::memory_order_relaxed);
                         break;
                     }
-                    p->payload = (static_cast<std::uint64_t>(t) << 32u) ^ static_cast<std::uint64_t>(i);
+                    p->payload =
+                        (static_cast<std::uint64_t>(t) << 32u) ^ static_cast<std::uint64_t>(i);
                     held.push_back(p);
                     continue;
                 }

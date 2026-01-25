@@ -154,9 +154,9 @@ class LSCQ {
     alignas(64) std::atomic<int> active_ops_{0};
     alignas(64) std::atomic<bool> closing_{false};
 
-    std::size_t scqsize_;       // Size of each SCQP node
-    ObjectPool<Node> pool_;     // Node allocator/recycler (replaces EBR for LSCQ nodes)
-    EBRManager* legacy_ebr_;    // Optional legacy pointer (unused; kept for backward compatibility)
+    std::size_t scqsize_;     // Size of each SCQP node
+    ObjectPool<Node> pool_;   // Node allocator/recycler (replaces EBR for LSCQ nodes)
+    EBRManager* legacy_ebr_;  // Optional legacy pointer (unused; kept for backward compatibility)
 };
 
 }  // namespace lscq
