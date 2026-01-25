@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+build-*/
 cmake-build-*/
 out/
 bin/
@@ -80,3 +81,10 @@ nul
 # Temporary files
 tmpfiles/
 .github\workflows\tmpfiles
+
+# Claude/AI generated analysis docs (local only)
+.claude/
+BENCHMARK_HANG_ANALYSIS.md
+LSCQ_BUG_INVESTIGATION.md
+LSCQ_GOLANG_CPP_COMPARISON.md
+PERFORMANCE_SUMMARY.md
