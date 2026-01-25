@@ -127,3 +127,28 @@ target_link_libraries(debug_lscq_pair
 set_target_properties(debug_lscq_pair PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
+
+# Phase 0: LSCQ usage pattern analysis for ObjectPool optimization
+# Analyzes Get/Put ratio and cache hit potential
+add_executable(test_lscq_usage_pattern
+  analysis/test_lscq_usage_pattern.cpp
+)
+
+target_link_libraries(test_lscq_usage_pattern
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    GTest::gtest_main
+)
+
+set_target_properties(test_lscq_usage_pattern PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET test_lscq_usage_pattern POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:test_lscq_usage_pattern>"
+  )
+endif()
+
+gtest_discover_tests(test_lscq_usage_pattern TEST_PREFIX "test_lscq_usage_pattern.")

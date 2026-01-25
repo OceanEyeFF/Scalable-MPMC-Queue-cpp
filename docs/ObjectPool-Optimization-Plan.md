@@ -1,7 +1,23 @@
-# ObjectPool 优化计划
+# ObjectPool 优化计划 v2.0
 
 > 创建日期: 2026-01-25
-> 状态: 规划中
+> 更新日期: 2026-01-25
+> 状态: **已更新 - 整合Review发现**
+>
+> ⚠️ **重要变更**: 本版本整合了深度Review的发现，修正了性能预期，新增了Phase 0和thread_local方案
+
+## 变更摘要
+
+| 变更项 | v1.0 | v2.0 |
+|--------|------|------|
+| Phase划分 | Phase 1-3 | **Phase 0** (新增) + Phase 1-3 |
+| Phase 1方案 | 仅Per-Pool Map | **双轨制**: Map方案 / thread_local方案 |
+| 性能预期 | 5-10ns | **30-50ns** (Map) 或 **5-10ns** (TLS) |
+| 命中率预期 | ~50% | **20-40%** (基于LSCQ分析) |
+| 测试工具 | ASan/TSan | **MSVC CRT Debug Heap** (Windows适配) |
+| 闭锁机制 | 无超时 | **1秒超时保护** |
+
+---
 
 ## 背景
 
@@ -35,9 +51,55 @@ class ObjectPool {
 
 ## 渐进式优化计划
 
-### Phase 1: 单对象本地缓存
+### Phase 0: 基准数据收集 🆕
 
-**目标**: 为每个线程添加单个私有对象槽位，热路径无锁
+> ⚠️ **这是最关键的Phase！** 必须在开始任何优化前完成。
+
+**目标**: 用实测数据验证假设，决定后续方案
+
+**测试内容**:
+
+1. **组件开销微基准测试** (`benchmark_components.cpp`)
+   - `shared_mutex` 读锁开销
+   - `unordered_map::find()` 开销
+   - `std::thread::id` 获取和哈希开销
+   - `thread_local` 访问开销
+   - 原子操作开销
+
+2. **LSCQ使用模式分析** (`test_lscq_usage_pattern.cpp`)
+   - Get/Put 调用比例
+   - 同线程 Put→Get 间隔时间
+   - 潜在本地缓存命中率
+
+**决策阈值**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Phase 0 决策矩阵                                             │
+├─────────────────────────────────────────────────────────────┤
+│ 如果 Map热路径 < 25ns AND 命中率 > 40%                       │
+│   → 使用 Per-Pool Map 方案（简单安全）                       │
+├─────────────────────────────────────────────────────────────┤
+│ 如果 Map热路径 > 40ns OR 命中率 < 30%                        │
+│   → 使用 thread_local 混合方案（高性能）                     │
+├─────────────────────────────────────────────────────────────┤
+│ 其他情况                                                     │
+│   → 评估风险后选择，倾向于 thread_local 方案                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**预计工作量**: 1天
+
+---
+
+### Phase 1: 单对象本地缓存（双轨制）
+
+**目标**: 为每个线程添加单个私有对象槽位，热路径尽可能无锁
+
+根据 Phase 0 的测试结果，选择以下方案之一：
+
+#### 方案A: Per-Pool Map（安全优先）
+
+**适用条件**: Map热路径 < 25ns
 
 **设计**:
 ```cpp
@@ -52,24 +114,122 @@ std::unordered_map<std::thread::id, LocalCache> caches_;
 
 **Get 流程**:
 ```
-1. [热路径] 检查 private_obj → 非空则直接返回（无锁）
+1. [热路径] shared_lock + map.find() → 检查 private_obj → 非空则返回
 2. [温路径] 从共享分片获取
 3. [冷路径] 工作窃取 / 新建
 ```
 
 **Put 流程**:
 ```
-1. [热路径] private_obj 为空 → 直接存入（无锁）
+1. [热路径] shared_lock + map.find() → private_obj 为空 → 存入
 2. [温路径] private_obj 已满 → 放入共享分片
 ```
 
-**预期收益**:
-- 热路径: ~5-10ns（vs 当前 ~50-100ns）
-- 命中率: ~50%（Get 后 Put，或 Put 后 Get 的场景）
+**性能预期** (修正后):
+- 热路径: **~30-50ns**（含 shared_mutex 读锁 + map 查找）
+- 命中率: ~30-40%
 
-**风险**:
-- Per-Pool Map 查找有开销（shared_mutex 读锁 + hash 查找）
-- 需要验证 LSCQ 使用场景的命中率
+**优点**:
+- ✅ Pool 完全控制缓存生命周期
+- ✅ 无全局 TLS，无跨 Pool 干扰
+- ✅ 析构时可安全遍历所有缓存
+
+**缺点**:
+- ⚠️ 热路径仍有锁开销
+- ⚠️ 优化效果有限（vs baseline 50-100ns）
+
+---
+
+#### 方案B: thread_local 混合方案（性能优先）🆕
+
+**适用条件**: Map热路径 > 40ns 或需要极致性能
+
+**设计**:
+```cpp
+template <class T>
+class ObjectPool {
+    struct LocalCache {
+        pointer private_obj = nullptr;
+        ObjectPool* owner = nullptr;  // 验证指针有效性
+    };
+
+    // 快路径：thread_local（真正的5-10ns）
+    static thread_local LocalCache tls_fast_cache_;
+
+    // 安全保障：注册表（仅用于析构清理）
+    std::mutex registry_mutex_;
+    std::vector<LocalCache*> registered_caches_;
+
+    // 闭锁机制
+    std::atomic<bool> closing_{false};
+    std::atomic<int> active_ops_{0};
+};
+```
+
+**Get 流程**:
+```cpp
+pointer Get() {
+    // 0. 闭锁检查
+    if (closing_.load(std::memory_order_acquire)) {
+        return factory_();
+    }
+    OpGuard guard(active_ops_);
+
+    // 1. [最热路径] 直接访问 thread_local（5-10ns）
+    if (tls_fast_cache_.owner == this && tls_fast_cache_.private_obj) {
+        pointer obj = tls_fast_cache_.private_obj;
+        tls_fast_cache_.private_obj = nullptr;
+        return obj;
+    }
+
+    // 2. [首次访问] 注册到 registry（仅一次）
+    if (tls_fast_cache_.owner != this) {
+        tls_fast_cache_.owner = this;
+        std::lock_guard lock(registry_mutex_);
+        registered_caches_.push_back(&tls_fast_cache_);
+    }
+
+    // 3. [慢路径] 从共享分片获取
+    return GetFromShards();
+}
+```
+
+**Put 流程**:
+```cpp
+void Put(pointer obj) {
+    if (!obj) return;
+
+    // 0. 闭锁检查
+    if (closing_.load(std::memory_order_acquire)) {
+        delete obj;
+        return;
+    }
+    OpGuard guard(active_ops_);
+
+    // 1. [最热路径] 存入 thread_local
+    if (tls_fast_cache_.owner == this && !tls_fast_cache_.private_obj) {
+        tls_fast_cache_.private_obj = obj;
+        return;
+    }
+
+    // 2. [慢路径] 放入共享分片
+    PutToShards(obj);
+}
+```
+
+**性能预期**:
+- 热路径: **~5-10ns**（仅指针检查，无锁无map）
+- 命中率: ~30-40%（与方案A相同）
+
+**优点**:
+- ✅ 真正的无锁热路径
+- ✅ 性能提升显著（5-10x vs baseline）
+- ✅ 通过 registry 保证析构安全
+
+**缺点**:
+- ⚠️ 实现复杂度较高
+- ⚠️ 需要特别注意生命周期管理
+- ⚠️ 全局 TLS 需要 owner 验证
 
 ---
 
@@ -80,11 +240,12 @@ std::unordered_map<std::thread::id, LocalCache> caches_;
 **设计**:
 ```cpp
 struct alignas(64) LocalCache {  // cache line 对齐
-    static constexpr std::size_t kBatchSize = 4;
+    static constexpr std::size_t kBatchSize = 8;  // 待 Phase 0 实测调优
 
     pointer private_obj = nullptr;           // 最快路径
     pointer local_batch[kBatchSize] = {};    // 本地批量
     std::size_t local_count = 0;
+    ObjectPool* owner = nullptr;             // 方案B专用
 };
 ```
 
@@ -104,12 +265,13 @@ struct alignas(64) LocalCache {  // cache line 对齐
 ```
 
 **预期收益**:
-- 热路径命中率: ~80-90%
+- 热路径命中率: ~60-80%
 - 减少共享分片访问频率
 
 **注意事项**:
-- kBatchSize 需要根据 LSCQ 使用模式调优
-- 过大的批量可能导致内存浪费
+- ⚠️ kBatchSize 需要根据 Phase 0 的 LSCQ 使用模式分析结果调优
+- ⚠️ 过大的批量可能导致内存浪费
+- ⚠️ LSCQ dequeue 场景 Put 多于 Get，需要考虑不对称情况
 
 ---
 
@@ -117,11 +279,9 @@ struct alignas(64) LocalCache {  // cache line 对齐
 
 **目标**: 解决 TLS 生命周期问题，确保安全性
 
-**当前问题**:
+**核心矛盾**:
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 核心矛盾                                                     │
-├─────────────────────────────────────────────────────────────┤
 │ TLS 生命周期 = 线程生命周期                                  │
 │ Pool 生命周期 = Pool 对象生命周期                            │
 │                                                             │
@@ -136,103 +296,145 @@ struct alignas(64) LocalCache {  // cache line 对齐
 - 析构时只能清理当前线程的 TLS
 - 其他线程的 TLS 仍指向已释放内存
 
-**解决方案: 闭锁 + Per-Pool Map**:
+**解决方案: 闭锁 + 超时保护**:
+
 ```cpp
-template <class T>
-class ObjectPool {
-    // 闭锁机制（保护析构）
-    std::atomic<bool> closing_{false};
-    std::atomic<int> active_ops_{0};
+// RAII 操作计数器
+struct OpGuard {
+    std::atomic<int>& counter;
 
-    // Per-Pool 缓存（避免全局 TLS）
-    std::shared_mutex cache_mutex_;
-    std::unordered_map<std::thread::id, LocalCache> caches_;
-
-    pointer Get() {
-        // 检查关闭状态
-        if (closing_.load(std::memory_order_acquire)) {
-            return factory_();
-        }
-
-        // 操作计数保护
-        active_ops_.fetch_add(1, std::memory_order_acquire);
-        auto guard = finally([this] {
-            active_ops_.fetch_sub(1, std::memory_order_release);
-        });
-
-        // ... 正常 Get 逻辑 ...
+    explicit OpGuard(std::atomic<int>& c) : counter(c) {
+        counter.fetch_add(1, std::memory_order_acquire);
     }
 
-    ~ObjectPool() {
-        // 1. 标记关闭
-        closing_.store(true, std::memory_order_release);
-
-        // 2. 等待所有操作完成
-        while (active_ops_.load(std::memory_order_acquire) > 0) {
-            std::this_thread::yield();
-        }
-
-        // 3. 安全清理本地缓存
-        std::unique_lock lock(cache_mutex_);
-        for (auto& [tid, cache] : caches_) {
-            if (cache.private_obj) {
-                delete cache.private_obj;
-            }
-            for (std::size_t i = 0; i < cache.local_count; ++i) {
-                delete cache.local_batch[i];
-            }
-        }
-        caches_.clear();
-
-        // 4. 共享分片自动清理（RAII）
+    ~OpGuard() {
+        counter.fetch_sub(1, std::memory_order_release);
     }
+
+    OpGuard(const OpGuard&) = delete;
+    OpGuard& operator=(const OpGuard&) = delete;
 };
+
+// 析构函数（带超时保护）
+~ObjectPool() {
+    // 1. 标记关闭
+    closing_.store(true, std::memory_order_release);
+
+    // 2. 等待所有操作完成（带超时）
+    constexpr auto kTimeout = std::chrono::seconds(1);
+    auto deadline = std::chrono::steady_clock::now() + kTimeout;
+
+    while (active_ops_.load(std::memory_order_acquire) > 0) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            // 超时警告（生产环境应记录日志）
+            #ifdef _DEBUG
+            std::cerr << "ObjectPool: destruction timeout, forcing cleanup\n";
+            #endif
+            break;
+        }
+        std::this_thread::yield();
+    }
+
+    // 3. 清理本地缓存
+    // 方案A: 遍历 caches_ map
+    // 方案B: 遍历 registered_caches_
+    CleanupLocalCaches();
+
+    // 4. 共享分片自动清理（RAII）
+}
+```
+
+**清理逻辑（方案B）**:
+```cpp
+void CleanupLocalCaches() {
+    std::lock_guard lock(registry_mutex_);
+    for (LocalCache* cache : registered_caches_) {
+        if (cache->owner == this) {
+            if (cache->private_obj) {
+                delete cache->private_obj;
+                cache->private_obj = nullptr;
+            }
+            // Phase 2: 清理 local_batch
+            for (std::size_t i = 0; i < cache->local_count; ++i) {
+                delete cache->local_batch[i];
+            }
+            cache->local_count = 0;
+            cache->owner = nullptr;  // 标记为无效
+        }
+    }
+    registered_caches_.clear();
+}
 ```
 
 **优点**:
-- Pool 完全控制缓存生命周期
-- 无全局 TLS，无跨 Pool 干扰
-- 析构时可安全遍历所有缓存
+- ✅ Pool 完全控制缓存生命周期
+- ✅ 超时保护防止析构无限等待
+- ✅ 方案B 通过 owner 验证防止 UAF
 
 **缺点**:
-- 每次 Get/Put 需要 shared_mutex 读锁
-- 有原子操作开销（active_ops_）
-
-**优化方向**:
-- 考虑用 thread_local + Pool 指针检查替代 map 查找
-- 或使用 lock-free 的并发 map
+- ⚠️ 每次 Get/Put 有原子操作开销（~10-15ns）
+- ⚠️ 超时强制清理可能导致小概率内存泄漏
 
 ---
 
 ## 实施时间线
 
-| Phase | 预计工作量 | 优先级 |
-|-------|-----------|--------|
-| Phase 1 | 1-2 天 | 高 |
-| Phase 2 | 1 天 | 中 |
-| Phase 3 | 1-2 天 | 高（安全性） |
+| Phase | 预计工作量 | 优先级 | 依赖 |
+|-------|-----------|--------|------|
+| Phase 0 | 1 天 | **最高** | 无 |
+| Phase 1 | 1-2 天 | 高 | Phase 0 决策 |
+| Phase 2 | 1 天 | 中 | Phase 1 |
+| Phase 3 | 1-2 天 | 高（安全性） | Phase 1 |
 
 ## 测试验证
 
 每个 Phase 完成后需要验证：
 
-1. **功能正确性**
-   - 单线程 Get/Put 测试
-   - 多线程并发测试
-   - LSCQ 集成测试
+### 1. 功能正确性
+- 单线程 Get/Put 测试
+- 多线程并发测试
+- LSCQ 集成测试
 
-2. **内存安全**
-   - AddressSanitizer 验证无泄漏
-   - ThreadSanitizer 验证无数据竞争
+### 2. 内存安全（Windows/MSVC 适配）🆕
 
-3. **性能对比**
-   - benchmark_pair 测试吞吐量
-   - 对比优化前后的 ns/op
+> ⚠️ Windows 环境不支持 AddressSanitizer/ThreadSanitizer
 
-4. **析构安全**
-   - Pool 先于线程销毁
-   - 线程先于 Pool 退出
-   - 并发析构场景
+**替代方案**:
+- **CRT Debug Heap**: 检测内存泄漏
+  ```cpp
+  #define _CRTDBG_MAP_ALLOC
+  #include <crtdbg.h>
+  _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+  ```
+- **VS Diagnostic Tools**: 监控内存使用曲线
+- **Application Verifier**: 检测堆损坏
+- **自定义调试计数器**: 追踪 Get/Put 配对
+
+### 3. 性能对比
+
+| 场景 | Baseline | Phase 1 (Map) | Phase 1 (TLS) | Phase 2 | Phase 3 |
+|------|----------|---------------|---------------|---------|---------|
+| 单线程热路径 | 50-100ns | 30-50ns | **5-10ns** | 5-10ns | 15-25ns |
+| 4线程并发 | 80-150ns | 50-100ns | 20-40ns | 15-30ns | 25-45ns |
+| 命中率 | N/A | 30-40% | 30-40% | 60-80% | 60-80% |
+
+### 4. 析构安全
+- Pool 先于线程销毁（危险场景）
+- 线程先于 Pool 退出（安全场景）
+- 并发析构场景
+- 多 Pool 共存场景
+
+---
+
+## 关键风险与缓解措施
+
+| 风险 | 影响 | 缓解措施 |
+|------|------|---------|
+| Map查找开销抵消优化 | Phase 1 效果不达标 | Phase 0 实测，必要时切换 TLS 方案 |
+| TLS 生命周期 UAF | 程序崩溃 | owner 验证 + 闭锁机制 |
+| 析构无限等待 | 程序挂起 | 1秒超时强制清理 |
+| 命中率过低 | 优化效果有限 | Phase 2 扩大缓存容量 |
+| Windows shared_mutex 性能差 | 热路径开销增加 | 使用 TLS 方案替代 |
 
 ---
 
@@ -241,3 +443,11 @@ class ObjectPool {
 - Golang sync.Pool 实现: https://github.com/golang/go/blob/master/src/sync/pool.go
 - C++ TLS 最佳实践
 - 项目 EBR 实现的教训: `include/lscq/ebr.hpp`
+- Review 报告: `docs/ObjectPool-Optimization-Review.md`
+- 测试计划: `docs/ObjectPool-Testing-Plan.md`
+
+---
+
+*文档版本: 2.0*
+*更新日期: 2026-01-25*
+*下次Review: Phase 0 完成后*

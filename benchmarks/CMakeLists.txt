@@ -83,3 +83,25 @@ if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_stress>"
   )
 endif()
+
+# Phase 0: Component overhead microbenchmarks for ObjectPool optimization
+# Measures shared_mutex, unordered_map, thread_local, and atomic operation overhead
+add_executable(benchmark_components
+  benchmark_components.cpp
+)
+
+target_link_libraries(benchmark_components
+  PRIVATE
+    lscq::lscq
+    benchmark::benchmark
+)
+
+set_target_properties(benchmark_components PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET benchmark_components POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_components>"
+  )
+endif()
