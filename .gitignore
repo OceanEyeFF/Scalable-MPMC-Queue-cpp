@@ -88,3 +88,6 @@ BENCHMARK_HANG_ANALYSIS.md
 LSCQ_BUG_INVESTIGATION.md
 LSCQ_GOLANG_CPP_COMPARISON.md
 PERFORMANCE_SUMMARY.md
+
+# Root-level temporary benchmark outputs
+benchmark_*.json
