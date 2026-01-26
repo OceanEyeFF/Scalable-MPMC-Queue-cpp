@@ -470,6 +470,11 @@ TEST(ObjectPoolStress, LongRunning_Map_60s) {
     RunLongRunningStability<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", std::chrono::seconds(60));
 }
 
+TEST(ObjectPoolStress, LongRunning_TLSv2_60s) {
+    RunLongRunningStability<lscq::ObjectPoolTLSv2<TrackedObject>>(
+        "ObjectPoolTLSv2", std::chrono::seconds(60));
+}
+
 // ============================================================================
 // Test 3: Thread Churn Test (frequent thread creation/destruction)
 // ============================================================================
