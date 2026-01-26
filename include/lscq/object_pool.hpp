@@ -12,14 +12,11 @@
 #ifndef LSCQ_OBJECT_POOL_HPP_
 #define LSCQ_OBJECT_POOL_HPP_
 
-#include <algorithm>
 #include <cstddef>
 #include <functional>
-#include <memory>
-#include <mutex>
-#include <thread>
 #include <utility>
-#include <vector>
+
+#include <lscq/detail/object_pool_core.hpp>
 
 namespace lscq {
 
@@ -50,7 +47,7 @@ namespace lscq {
  * @endcode
  */
 template <class T>
-class ObjectPool {
+class ObjectPool : private detail::ObjectPoolCore<T> {
    public:
     /** @brief Object type managed by the pool. */
     using value_type = T;
@@ -73,8 +70,9 @@ class ObjectPool {
      * @note The factory is expected to be valid (non-empty) and to return a
      * heap-allocated object.
      */
-    explicit ObjectPool(Factory factory, std::size_t shard_count = DefaultShardCount())
-        : factory_(std::move(factory)), shards_(std::max<std::size_t>(1, shard_count)) {}
+    explicit ObjectPool(Factory factory,
+                        std::size_t shard_count = detail::ObjectPoolCore<T>::DefaultShardCount())
+        : detail::ObjectPoolCore<T>(std::move(factory), shard_count) {}
 
     ObjectPool(const ObjectPool&) = delete;
     ObjectPool& operator=(const ObjectPool&) = delete;
@@ -82,7 +80,7 @@ class ObjectPool {
     ObjectPool& operator=(ObjectPool&&) = delete;
 
     /** @brief Destroy the pool and release all objects currently stored in it. */
-    ~ObjectPool() { Clear(); }
+    ~ObjectPool() = default;
 
     /**
      * @brief Get an object from the pool.
@@ -92,23 +90,7 @@ class ObjectPool {
      * via `Put()` when no longer needed.
      */
     pointer Get() {
-        const std::size_t shard_index = CurrentShardIndex();
-
-        if (pointer from_local = TryPopFromShard(shard_index)) {
-            return from_local;
-        }
-
-        // Opportunistically steal from other shards if the local shard is empty.
-        // This helps under imbalanced workloads where some threads return more
-        // objects than they consume.
-        for (std::size_t n = 1; n < shards_.size(); ++n) {
-            const std::size_t other = (shard_index + n) % shards_.size();
-            if (pointer stolen = TryStealFromShard(other)) {
-                return stolen;
-            }
-        }
-
-        return factory_ ? factory_() : nullptr;
+        return this->GetShared();
     }
 
     /**
@@ -119,13 +101,7 @@ class ObjectPool {
      * when the pool itself is destroyed.
      */
     void Put(pointer obj) {
-        if (obj == nullptr) {
-            return;
-        }
-        const std::size_t shard_index = CurrentShardIndex();
-        Shard& shard = shards_[shard_index];
-        std::lock_guard<std::mutex> lock(shard.mutex);
-        shard.objects.emplace_back(obj);
+        this->PutShared(obj);
     }
 
     /**
@@ -133,74 +109,29 @@ class ObjectPool {
      *
      * @note This only affects objects currently stored inside the pool. Objects
      * checked out via `Get()` are owned by the caller and are not tracked.
+     *
+     * @note Phase 1 local-cache implementations keep the same Clear() API and must
+     * remain safe to call concurrently with Get()/Put() (clearing both shared storage
+     * and any per-thread caches with appropriate synchronization).
      */
     void Clear() {
-        for (Shard& shard : shards_) {
-            std::lock_guard<std::mutex> lock(shard.mutex);
-            shard.objects.clear();
-        }
+        this->ClearShared();
     }
 
     /**
      * @brief Get the number of objects currently stored in the pool.
      * @return Current pool size.
+     *
+     * @note Under concurrency this value is approximate.
      */
     std::size_t Size() const {
-        std::size_t total = 0;
-        for (const Shard& shard : shards_) {
-            std::lock_guard<std::mutex> lock(shard.mutex);
-            total += shard.objects.size();
-        }
-        return total;
+        return this->SizeApprox();
     }
 
    private:
-    struct Shard {
-        mutable std::mutex mutex;
-        std::vector<std::unique_ptr<T>> objects;
-    };
-
-    static std::size_t DefaultShardCount() {
-        // std::thread::hardware_concurrency() is allowed to return 0.
-        const unsigned int hc = std::thread::hardware_concurrency();
-        const std::size_t base = std::max<std::size_t>(1, hc);
-        return base * 2;
-    }
-
     std::size_t CurrentShardIndex() const {
-        return std::hash<std::thread::id>{}(std::this_thread::get_id()) % shards_.size();
+        return detail::ObjectPoolCore<T>::CurrentShardIndex();
     }
-
-    pointer TryPopFromShard(std::size_t shard_index) {
-        Shard& shard = shards_[shard_index];
-        std::unique_ptr<T> obj;
-        {
-            std::lock_guard<std::mutex> lock(shard.mutex);
-            if (shard.objects.empty()) {
-                return nullptr;
-            }
-            obj = std::move(shard.objects.back());
-            shard.objects.pop_back();
-        }
-        return obj.release();
-    }
-
-    pointer TryStealFromShard(std::size_t shard_index) {
-        Shard& shard = shards_[shard_index];
-        std::unique_ptr<T> obj;
-        {
-            std::unique_lock<std::mutex> lock(shard.mutex, std::try_to_lock);
-            if (!lock.owns_lock() || shard.objects.empty()) {
-                return nullptr;
-            }
-            obj = std::move(shard.objects.back());
-            shard.objects.pop_back();
-        }
-        return obj.release();
-    }
-
-    Factory factory_;
-    std::vector<Shard> shards_;
 };
 
 }  // namespace lscq

@@ -20,10 +20,15 @@
 #include <benchmark/benchmark.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <shared_mutex>
 #include <thread>
 #include <unordered_map>
+
+#include <lscq/object_pool.hpp>
+#include <lscq/object_pool_map.hpp>
+#include <lscq/object_pool_tls.hpp>
 
 //=============================================================================
 // 0.1.1 Map Lookup Overhead
@@ -307,6 +312,159 @@ static void BM_FullPath_ThreadLocal(benchmark::State& state) {
     fast_cache.private_obj = nullptr;
 }
 BENCHMARK(BM_FullPath_ThreadLocal)->Threads(1)->Threads(2)->Threads(4)->Threads(8);
+
+//=============================================================================
+// 0.2 ObjectPool Get/Put End-to-End Benchmarks (Phase 1)
+//=============================================================================
+
+namespace {
+
+struct PoolItem {
+    std::uint64_t payload = 0;
+};
+
+constexpr std::size_t kPoolShardCount = 8;
+constexpr std::size_t kClearFillCount = 1024;
+
+template <typename PoolType>
+void FillPool(PoolType& pool, std::size_t count) {
+    for (std::size_t i = 0; i < count; ++i) {
+        pool.Put(new PoolItem());
+    }
+}
+
+template <typename PoolType>
+PoolType MakePool() {
+    return PoolType([] { return new PoolItem(); }, kPoolShardCount);
+}
+
+}  // namespace
+
+template <typename PoolType>
+static void BM_ObjectPool_HotPath(benchmark::State& state) {
+    PoolType pool = MakePool<PoolType>();
+
+    PoolItem* warm = pool.Get();
+    pool.Put(warm);
+
+    for (auto _ : state) {
+        PoolItem* p = pool.Get();
+        benchmark::DoNotOptimize(p);
+        p->payload++;
+        pool.Put(p);
+    }
+
+    pool.Clear();
+}
+
+template <typename PoolType>
+static void BM_ObjectPool_ColdPath(benchmark::State& state) {
+    PoolType pool = MakePool<PoolType>();
+
+    for (auto _ : state) {
+        state.PauseTiming();
+        pool.Clear();
+        state.ResumeTiming();
+
+        PoolItem* p = pool.Get();
+        benchmark::DoNotOptimize(p);
+        p->payload++;
+        pool.Put(p);
+    }
+
+    pool.Clear();
+}
+
+template <typename PoolType>
+static void BM_ObjectPool_Throughput(benchmark::State& state) {
+    static PoolType pool = MakePool<PoolType>();
+
+    if (state.thread_index() == 0) {
+        pool.Clear();
+    }
+
+    for (auto _ : state) {
+        PoolItem* p = pool.Get();
+        benchmark::DoNotOptimize(p);
+        p->payload++;
+        pool.Put(p);
+    }
+
+    state.SetItemsProcessed(state.iterations() * state.threads());
+}
+
+template <typename PoolType>
+static void BM_ObjectPool_Clear(benchmark::State& state) {
+    PoolType pool = MakePool<PoolType>();
+
+    for (auto _ : state) {
+        state.PauseTiming();
+        FillPool(pool, kClearFillCount);
+        state.ResumeTiming();
+
+        pool.Clear();
+    }
+}
+
+static void BM_ObjectPool_Baseline_HotPath(benchmark::State& state) {
+    BM_ObjectPool_HotPath<lscq::ObjectPool<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPool_Baseline_HotPath)->Threads(1);
+
+static void BM_ObjectPoolTLS_HotPath(benchmark::State& state) {
+    BM_ObjectPool_HotPath<lscq::ObjectPoolTLS<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolTLS_HotPath)->Threads(1);
+
+static void BM_ObjectPoolMap_HotPath(benchmark::State& state) {
+    BM_ObjectPool_HotPath<lscq::ObjectPoolMap<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolMap_HotPath)->Threads(1);
+
+static void BM_ObjectPool_Baseline_ColdPath(benchmark::State& state) {
+    BM_ObjectPool_ColdPath<lscq::ObjectPool<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPool_Baseline_ColdPath)->Threads(1);
+
+static void BM_ObjectPoolTLS_ColdPath(benchmark::State& state) {
+    BM_ObjectPool_ColdPath<lscq::ObjectPoolTLS<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolTLS_ColdPath)->Threads(1);
+
+static void BM_ObjectPoolMap_ColdPath(benchmark::State& state) {
+    BM_ObjectPool_ColdPath<lscq::ObjectPoolMap<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolMap_ColdPath)->Threads(1);
+
+static void BM_ObjectPool_Baseline_Throughput(benchmark::State& state) {
+    BM_ObjectPool_Throughput<lscq::ObjectPool<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPool_Baseline_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(16);
+
+static void BM_ObjectPoolTLS_Throughput(benchmark::State& state) {
+    BM_ObjectPool_Throughput<lscq::ObjectPoolTLS<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolTLS_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(16);
+
+static void BM_ObjectPoolMap_Throughput(benchmark::State& state) {
+    BM_ObjectPool_Throughput<lscq::ObjectPoolMap<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolMap_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(16);
+
+static void BM_ObjectPool_Baseline_Clear(benchmark::State& state) {
+    BM_ObjectPool_Clear<lscq::ObjectPool<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPool_Baseline_Clear)->Threads(1);
+
+static void BM_ObjectPoolTLS_Clear(benchmark::State& state) {
+    BM_ObjectPool_Clear<lscq::ObjectPoolTLS<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolTLS_Clear)->Threads(1);
+
+static void BM_ObjectPoolMap_Clear(benchmark::State& state) {
+    BM_ObjectPool_Clear<lscq::ObjectPoolMap<PoolItem>>(state);
+}
+BENCHMARK(BM_ObjectPoolMap_Clear)->Threads(1);
 
 //=============================================================================
 // Main

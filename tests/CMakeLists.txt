@@ -13,6 +13,15 @@ add_executable(lscq_unit_tests
 
 add_executable(test_object_pool
   unit/test_object_pool.cpp
+  unit/test_object_pool_core.cpp
+)
+
+add_executable(test_object_pool_map
+  unit/test_object_pool_map.cpp
+)
+
+add_executable(test_object_pool_tls
+  unit/test_object_pool_tls.cpp
 )
 
 option(LSCQ_ENABLE_COVERAGE "Enable compiler instrumentation for llvm-cov/llvm-profdata" OFF)
@@ -46,16 +55,22 @@ if(LSCQ_ENABLE_COVERAGE)
   if(lscq_cov_compile_opts)
     target_compile_options(lscq_unit_tests PRIVATE ${lscq_cov_compile_opts})
     target_compile_options(test_object_pool PRIVATE ${lscq_cov_compile_opts})
+    target_compile_options(test_object_pool_map PRIVATE ${lscq_cov_compile_opts})
+    target_compile_options(test_object_pool_tls PRIVATE ${lscq_cov_compile_opts})
   endif()
   if(lscq_cov_link_opts)
     target_link_options(lscq_unit_tests PRIVATE ${lscq_cov_link_opts})
     target_link_options(test_object_pool PRIVATE ${lscq_cov_link_opts})
+    target_link_options(test_object_pool_map PRIVATE ${lscq_cov_link_opts})
+    target_link_options(test_object_pool_tls PRIVATE ${lscq_cov_link_opts})
   endif()
 
   if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     if(EXISTS "${lscq_cov_profile_lib}")
       target_link_libraries(lscq_unit_tests PRIVATE "${lscq_cov_profile_lib}")
       target_link_libraries(test_object_pool PRIVATE "${lscq_cov_profile_lib}")
+      target_link_libraries(test_object_pool_map PRIVATE "${lscq_cov_profile_lib}")
+      target_link_libraries(test_object_pool_tls PRIVATE "${lscq_cov_profile_lib}")
     else()
       message(WARNING "LSCQ_ENABLE_COVERAGE=ON but clang profile runtime was not found at: ${lscq_cov_profile_lib}")
     endif()
@@ -84,11 +99,33 @@ target_link_libraries(test_object_pool
     GTest::gtest_main
 )
 
+target_link_libraries(test_object_pool_map
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    GTest::gtest_main
+)
+
+target_link_libraries(test_object_pool_tls
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    GTest::gtest_main
+)
+
 set_target_properties(lscq_unit_tests PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
 
 set_target_properties(test_object_pool PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
+
+set_target_properties(test_object_pool_map PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
+
+set_target_properties(test_object_pool_tls PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
 
@@ -99,6 +136,12 @@ if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}
   add_custom_command(TARGET test_object_pool POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:test_object_pool>"
   )
+  add_custom_command(TARGET test_object_pool_map POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:test_object_pool_map>"
+  )
+  add_custom_command(TARGET test_object_pool_tls POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:test_object_pool_tls>"
+  )
 endif()
 
 include(GoogleTest)
@@ -108,9 +151,19 @@ if(LSCQ_ENABLE_COVERAGE)
     TEST_PREFIX "test_object_pool."
     PROPERTIES ENVIRONMENT "LLVM_PROFILE_FILE=coverage-%p.profraw"
   )
+  gtest_discover_tests(test_object_pool_map
+    TEST_PREFIX "test_object_pool_map."
+    PROPERTIES ENVIRONMENT "LLVM_PROFILE_FILE=coverage-%p.profraw"
+  )
+  gtest_discover_tests(test_object_pool_tls
+    TEST_PREFIX "test_object_pool_tls."
+    PROPERTIES ENVIRONMENT "LLVM_PROFILE_FILE=coverage-%p.profraw"
+  )
 else()
   gtest_discover_tests(lscq_unit_tests)
   gtest_discover_tests(test_object_pool TEST_PREFIX "test_object_pool.")
+  gtest_discover_tests(test_object_pool_map TEST_PREFIX "test_object_pool_map.")
+  gtest_discover_tests(test_object_pool_tls TEST_PREFIX "test_object_pool_tls.")
 endif()
 
 # Debug test for LSCQ Pair mode
@@ -152,3 +205,31 @@ if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}
 endif()
 
 gtest_discover_tests(test_lscq_usage_pattern TEST_PREFIX "test_lscq_usage_pattern.")
+
+# Phase 1: High-load stability stress tests for ObjectPool implementations
+add_executable(test_object_pool_stress
+  stress/test_object_pool_stress.cpp
+)
+
+target_link_libraries(test_object_pool_stress
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    GTest::gtest_main
+)
+
+set_target_properties(test_object_pool_stress PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET test_object_pool_stress POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:test_object_pool_stress>"
+  )
+endif()
+
+# Stress tests have longer timeouts
+gtest_discover_tests(test_object_pool_stress
+  TEST_PREFIX "test_object_pool_stress."
+  PROPERTIES TIMEOUT 300  # 5 minutes timeout for stress tests
+)

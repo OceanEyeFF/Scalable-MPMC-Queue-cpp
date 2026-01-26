@@ -5,6 +5,7 @@ add_executable(lscq_benchmarks
   benchmark_mixed.cpp
   benchmark_empty.cpp
   benchmark_memory.cpp
+  benchmark_object_pool_map.cpp
 )
 
 target_link_libraries(lscq_benchmarks
@@ -103,5 +104,26 @@ set_target_properties(benchmark_components PROPERTIES
 if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
   add_custom_command(TARGET benchmark_components POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_components>"
+  )
+endif()
+
+add_executable(benchmark_object_pool_tls
+  benchmark_object_pool_tls.cpp
+)
+
+target_link_libraries(benchmark_object_pool_tls
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    benchmark::benchmark
+)
+
+set_target_properties(benchmark_object_pool_tls PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET benchmark_object_pool_tls POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_object_pool_tls>"
   )
 endif()

@@ -8,6 +8,10 @@
 #define private public
 #include <lscq/object_pool.hpp>
 #undef private
+#include <lscq/object_pool_map.hpp>
+#include <lscq/object_pool_tls.hpp>
+
+#include "test_object_pool_suite.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -339,6 +343,7 @@ TEST(ObjectPoolTest, WorkStealing) {
         auto& shard = pool.shards_[donor];
         std::lock_guard<std::mutex> lock(shard.mutex);
         shard.objects.emplace_back(expected);
+        shard.approx_size.fetch_add(1, std::memory_order_relaxed);
     }
 
     EXPECT_EQ(shard_size(pool, donor), 1u);
@@ -364,6 +369,7 @@ TEST(ObjectPoolTest, WorkStealing) {
         auto& shard = pool.shards_[donor];
         std::lock_guard<std::mutex> lock(shard.mutex);
         shard.objects.emplace_back(expected2);
+        shard.approx_size.fetch_add(1, std::memory_order_relaxed);
     }
 
     auto& donor_shard = pool.shards_[donor];
