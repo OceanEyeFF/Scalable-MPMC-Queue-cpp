@@ -24,6 +24,10 @@ add_executable(test_object_pool_tls
   unit/test_object_pool_tls.cpp
 )
 
+add_executable(test_object_pool_tls_v2
+  unit/test_object_pool_tls_v2.cpp
+)
+
 option(LSCQ_ENABLE_COVERAGE "Enable compiler instrumentation for llvm-cov/llvm-profdata" OFF)
 if(LSCQ_ENABLE_COVERAGE)
   set(lscq_cov_compile_opts "")
@@ -57,12 +61,14 @@ if(LSCQ_ENABLE_COVERAGE)
     target_compile_options(test_object_pool PRIVATE ${lscq_cov_compile_opts})
     target_compile_options(test_object_pool_map PRIVATE ${lscq_cov_compile_opts})
     target_compile_options(test_object_pool_tls PRIVATE ${lscq_cov_compile_opts})
+    target_compile_options(test_object_pool_tls_v2 PRIVATE ${lscq_cov_compile_opts})
   endif()
   if(lscq_cov_link_opts)
     target_link_options(lscq_unit_tests PRIVATE ${lscq_cov_link_opts})
     target_link_options(test_object_pool PRIVATE ${lscq_cov_link_opts})
     target_link_options(test_object_pool_map PRIVATE ${lscq_cov_link_opts})
     target_link_options(test_object_pool_tls PRIVATE ${lscq_cov_link_opts})
+    target_link_options(test_object_pool_tls_v2 PRIVATE ${lscq_cov_link_opts})
   endif()
 
   if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -71,6 +77,7 @@ if(LSCQ_ENABLE_COVERAGE)
       target_link_libraries(test_object_pool PRIVATE "${lscq_cov_profile_lib}")
       target_link_libraries(test_object_pool_map PRIVATE "${lscq_cov_profile_lib}")
       target_link_libraries(test_object_pool_tls PRIVATE "${lscq_cov_profile_lib}")
+      target_link_libraries(test_object_pool_tls_v2 PRIVATE "${lscq_cov_profile_lib}")
     else()
       message(WARNING "LSCQ_ENABLE_COVERAGE=ON but clang profile runtime was not found at: ${lscq_cov_profile_lib}")
     endif()
@@ -113,6 +120,13 @@ target_link_libraries(test_object_pool_tls
     GTest::gtest_main
 )
 
+target_link_libraries(test_object_pool_tls_v2
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    GTest::gtest_main
+)
+
 set_target_properties(lscq_unit_tests PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
@@ -129,6 +143,10 @@ set_target_properties(test_object_pool_tls PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
 
+set_target_properties(test_object_pool_tls_v2 PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
+
 if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
   add_custom_command(TARGET lscq_unit_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:lscq_unit_tests>"
@@ -141,6 +159,9 @@ if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}
   )
   add_custom_command(TARGET test_object_pool_tls POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:test_object_pool_tls>"
+  )
+  add_custom_command(TARGET test_object_pool_tls_v2 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:test_object_pool_tls_v2>"
   )
 endif()
 
@@ -159,11 +180,16 @@ if(LSCQ_ENABLE_COVERAGE)
     TEST_PREFIX "test_object_pool_tls."
     PROPERTIES ENVIRONMENT "LLVM_PROFILE_FILE=coverage-%p.profraw"
   )
+  gtest_discover_tests(test_object_pool_tls_v2
+    TEST_PREFIX "test_object_pool_tls_v2."
+    PROPERTIES ENVIRONMENT "LLVM_PROFILE_FILE=coverage-%p.profraw"
+  )
 else()
   gtest_discover_tests(lscq_unit_tests)
   gtest_discover_tests(test_object_pool TEST_PREFIX "test_object_pool.")
   gtest_discover_tests(test_object_pool_map TEST_PREFIX "test_object_pool_map.")
   gtest_discover_tests(test_object_pool_tls TEST_PREFIX "test_object_pool_tls.")
+  gtest_discover_tests(test_object_pool_tls_v2 TEST_PREFIX "test_object_pool_tls_v2.")
 endif()
 
 # Debug test for LSCQ Pair mode

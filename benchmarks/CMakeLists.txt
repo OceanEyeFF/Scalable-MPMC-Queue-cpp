@@ -127,3 +127,24 @@ if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_object_pool_tls>"
   )
 endif()
+
+add_executable(benchmark_object_pool_tls_v2
+  benchmark_object_pool_tls_v2.cpp
+)
+
+target_link_libraries(benchmark_object_pool_tls_v2
+  PRIVATE
+    lscq::lscq
+    lscq::lscq_impl
+    benchmark::benchmark
+)
+
+set_target_properties(benchmark_object_pool_tls_v2 PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+if(LSCQ_ENABLE_SANITIZERS AND DEFINED LSCQ_ASAN_DLL AND EXISTS "${LSCQ_ASAN_DLL}")
+  add_custom_command(TARGET benchmark_object_pool_tls_v2 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LSCQ_ASAN_DLL}" "$<TARGET_FILE_DIR:benchmark_object_pool_tls_v2>"
+  )
+endif()

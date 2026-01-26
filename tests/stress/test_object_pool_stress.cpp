@@ -25,6 +25,7 @@
 
 #include <lscq/object_pool_map.hpp>
 #include <lscq/object_pool_tls.hpp>
+#include <lscq/object_pool_tls_v2.hpp>
 
 namespace {
 
@@ -201,6 +202,179 @@ TEST(ObjectPoolStress, HighConcurrency_Map) {
     RunHighConcurrencyStress<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", config);
 }
 
+TEST(ObjectPoolStress, HighConcurrency_TLSv2) {
+    StressConfig config;
+    config.num_threads = 16;
+    config.ops_per_thread = 150000;
+    config.verbose = true;
+
+    RunHighConcurrencyStress<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2", config);
+}
+
+template <typename PoolType>
+void RunTimedHighLoadStress(const char* pool_name,
+                            std::size_t num_threads,
+                            std::chrono::seconds duration,
+                            bool verbose) {
+    TrackedObject::reset();
+    StressStats stats;
+
+    PoolType pool([] { return new TrackedObject(); });
+    SpinBarrier barrier(num_threads);
+    std::atomic<bool> stop{false};
+
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
+    for (std::size_t t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&] {
+            barrier.arrive_and_wait();
+            while (!stop.load(std::memory_order_relaxed)) {
+                TrackedObject* obj = pool.Get();
+                stats.get_ops.fetch_add(1, std::memory_order_relaxed);
+                if (obj != nullptr) {
+                    if (!obj->verify()) {
+                        stats.errors.fetch_add(1, std::memory_order_relaxed);
+                    }
+                    pool.Put(obj);
+                    stats.put_ops.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        });
+    }
+
+    auto start_time = std::chrono::steady_clock::now();
+    std::this_thread::sleep_for(duration);
+    stop.store(true, std::memory_order_release);
+
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(end_time - start_time).count();
+
+    pool.Clear();
+
+    if (verbose) {
+        stats.print(pool_name, elapsed);
+        TrackedObject::print_stats(pool_name);
+    }
+
+    EXPECT_EQ(stats.errors.load(), 0u) << pool_name << ": data corruption detected";
+    EXPECT_EQ(TrackedObject::active.load(), 0u) << pool_name << ": memory leak detected";
+    EXPECT_EQ(TrackedObject::created.load(), TrackedObject::destroyed.load())
+        << pool_name << ": created != destroyed";
+}
+
+TEST(ObjectPoolStress, TimedHighLoad_TLSv2_8Threads_10s) {
+    RunTimedHighLoadStress<lscq::ObjectPoolTLSv2<TrackedObject>>(
+        "ObjectPoolTLSv2", 8, std::chrono::seconds(10), true);
+}
+
+TEST(ObjectPoolStress, TimedHighLoad_TLSv2_16Threads_10s) {
+    RunTimedHighLoadStress<lscq::ObjectPoolTLSv2<TrackedObject>>(
+        "ObjectPoolTLSv2", 16, std::chrono::seconds(10), true);
+}
+
+template <typename PoolType>
+void RunBurstStress(const char* pool_name,
+                    std::size_t num_threads,
+                    std::size_t burst_size,
+                    std::size_t bursts_per_thread) {
+    TrackedObject::reset();
+    StressStats stats;
+
+    PoolType pool([] { return new TrackedObject(); });
+    SpinBarrier barrier(num_threads);
+
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
+    auto start_time = std::chrono::steady_clock::now();
+
+    for (std::size_t t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&] {
+            std::vector<TrackedObject*> local;
+            local.reserve(burst_size);
+
+            barrier.arrive_and_wait();
+
+            for (std::size_t burst = 0; burst < bursts_per_thread; ++burst) {
+                local.clear();
+                for (std::size_t i = 0; i < burst_size; ++i) {
+                    TrackedObject* obj = pool.Get();
+                    stats.get_ops.fetch_add(1, std::memory_order_relaxed);
+                    if (obj != nullptr) {
+                        if (!obj->verify()) {
+                            stats.errors.fetch_add(1, std::memory_order_relaxed);
+                        }
+                        local.push_back(obj);
+                    }
+                }
+
+                for (TrackedObject* obj : local) {
+                    pool.Put(obj);
+                    stats.put_ops.fetch_add(1, std::memory_order_relaxed);
+                }
+
+                if ((burst % 16) == 0) {
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(end_time - start_time).count();
+
+    pool.Clear();
+
+    stats.print(pool_name, elapsed);
+    TrackedObject::print_stats(pool_name);
+
+    EXPECT_EQ(stats.errors.load(), 0u) << pool_name << ": data corruption detected";
+    EXPECT_EQ(TrackedObject::active.load(), 0u) << pool_name << ": memory leak detected";
+    EXPECT_EQ(TrackedObject::created.load(), TrackedObject::destroyed.load())
+        << pool_name << ": created != destroyed";
+}
+
+TEST(ObjectPoolStress, Burst_TLSv2) {
+    RunBurstStress<lscq::ObjectPoolTLSv2<TrackedObject>>(
+        "ObjectPoolTLSv2", 8, 64, 200);
+}
+
+TEST(ObjectPoolStress, Coverage_TLSv2_BatchPaths) {
+    TrackedObject::reset();
+
+    lscq::ObjectPoolTLSv2<TrackedObject, 2> pool([] { return new TrackedObject(); });
+
+    TrackedObject* a = pool.Get();
+    TrackedObject* b = pool.Get();
+    TrackedObject* c = pool.Get();
+    TrackedObject* d = pool.Get();
+
+    pool.Put(a);  // fast slot
+    pool.Put(b);  // batch[0]
+    pool.Put(c);  // batch[1]
+
+    TrackedObject* fast = pool.Get();
+    TrackedObject* batch = pool.Get();
+
+    pool.Put(fast);
+    pool.Put(batch);
+    pool.Put(d);  // triggers batch flush
+
+    pool.Clear();
+
+    EXPECT_EQ(TrackedObject::active.load(), 0u);
+    EXPECT_EQ(TrackedObject::created.load(), TrackedObject::destroyed.load());
+}
+
 // ============================================================================
 // Test 2: Long-Running Stability Test
 // ============================================================================
@@ -282,6 +456,11 @@ TEST(ObjectPoolStress, LongRunning_Map_10s) {
     RunLongRunningStability<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", std::chrono::seconds(10));
 }
 
+TEST(ObjectPoolStress, LongRunning_TLSv2_10s) {
+    RunLongRunningStability<lscq::ObjectPoolTLSv2<TrackedObject>>(
+        "ObjectPoolTLSv2", std::chrono::seconds(10));
+}
+
 // Extended long-running tests (60 seconds)
 TEST(ObjectPoolStress, LongRunning_TLS_60s) {
     RunLongRunningStability<lscq::ObjectPoolTLS<TrackedObject>>("ObjectPoolTLS", std::chrono::seconds(60));
@@ -356,6 +535,10 @@ TEST(ObjectPoolStress, ThreadChurn_Map) {
     RunThreadChurnTest<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", 50, 8);
 }
 
+TEST(ObjectPoolStress, ThreadChurn_TLSv2) {
+    RunThreadChurnTest<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2", 50, 8);
+}
+
 // ============================================================================
 // Test 4: Concurrent Clear Test
 // ============================================================================
@@ -422,6 +605,11 @@ TEST(ObjectPoolStress, ConcurrentClear_TLS) {
 
 TEST(ObjectPoolStress, ConcurrentClear_Map) {
     RunConcurrentClearTest<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", std::chrono::seconds(5));
+}
+
+TEST(ObjectPoolStress, ConcurrentClear_TLSv2) {
+    RunConcurrentClearTest<lscq::ObjectPoolTLSv2<TrackedObject>>(
+        "ObjectPoolTLSv2", std::chrono::seconds(5));
 }
 
 // ============================================================================
@@ -491,6 +679,10 @@ TEST(ObjectPoolStress, PoolDestruction_Map) {
     RunPoolDestructionTest<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap");
 }
 
+TEST(ObjectPoolStress, PoolDestruction_TLSv2) {
+    RunPoolDestructionTest<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2");
+}
+
 // ============================================================================
 // Test 6: Extreme Thread Count
 // ============================================================================
@@ -550,6 +742,10 @@ TEST(ObjectPoolStress, ExtremeThreadCount_TLS_64) {
 
 TEST(ObjectPoolStress, ExtremeThreadCount_Map_64) {
     RunExtremeThreadCountTest<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", 64);
+}
+
+TEST(ObjectPoolStress, ExtremeThreadCount_TLSv2_64) {
+    RunExtremeThreadCountTest<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2", 64);
 }
 
 // ============================================================================

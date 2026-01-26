@@ -65,11 +65,37 @@ class ObjectPoolCore {
         return factory_ ? factory_() : nullptr;
     }
 
+    std::size_t GetSharedBatch(pointer* out, std::size_t max_count) {
+        if (out == nullptr || max_count == 0) {
+            return 0;
+        }
+
+        const std::size_t shard_index = CurrentShardIndex();
+        std::size_t count = shards_[shard_index].GetBatch(out, max_count);
+        if (count == max_count) {
+            return count;
+        }
+
+        for (std::size_t n = 1; n < shards_.size() && count < max_count; ++n) {
+            const std::size_t other = (shard_index + n) % shards_.size();
+            count += shards_[other].TryStealBatch(out + count, max_count - count);
+        }
+
+        return count;
+    }
+
     void PutShared(pointer obj) {
         if (obj == nullptr) {
             return;
         }
         PutToShard(CurrentShardIndex(), obj);
+    }
+
+    void PutSharedBatch(pointer* objects, std::size_t count) {
+        if (objects == nullptr || count == 0) {
+            return;
+        }
+        shards_[CurrentShardIndex()].PutBatch(objects, count);
     }
 
     void ClearShared() {
