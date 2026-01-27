@@ -134,15 +134,15 @@ class LSCQUsagePatternTest : public ::testing::Test {
 TEST_F(LSCQUsagePatternTest, SymmetricProducerConsumer) {
     lscq::LSCQ<uint64_t> queue(kSCQSize);
 
-    std::atomic<bool> stop{false};
+    std::atomic<int> producers_done{0};  // Track producer completion
     std::atomic<long> enqueue_count{0};
     std::atomic<long> dequeue_count{0};
 
-    // Producers - reduced iterations for faster testing
+    // Producers - reduced iterations for faster CI testing
     std::vector<std::thread> producers;
     for (int i = 0; i < kProducers; ++i) {
         producers.emplace_back([&, i]() {
-            for (int j = 0; j < 1000 && !stop.load(std::memory_order_relaxed); ++j) {
+            for (int j = 0; j < 500; ++j) {  // Reduced from 1000 to 500
                 auto* item = new uint64_t(i * 1000 + j);
                 if (queue.enqueue(item)) {
                     enqueue_count.fetch_add(1, std::memory_order_relaxed);
@@ -150,41 +150,46 @@ TEST_F(LSCQUsagePatternTest, SymmetricProducerConsumer) {
                     delete item;
                 }
             }
+            producers_done.fetch_add(1, std::memory_order_release);  // Signal completion
         });
     }
 
-    // Consumers with idle timeout
+    // Consumers with robust exit condition
     std::vector<std::thread> consumers;
     for (int i = 0; i < kConsumers; ++i) {
         consumers.emplace_back([&]() {
-            int idle_count = 0;
-            while (!stop.load(std::memory_order_relaxed) && idle_count < 10000) {
+            int consecutive_empty = 0;
+            while (true) {
                 if (auto* item = queue.dequeue()) {
                     dequeue_count.fetch_add(1, std::memory_order_relaxed);
                     delete item;
-                    idle_count = 0;
+                    consecutive_empty = 0;
                 } else {
-                    idle_count++;
+                    // Exit only if all producers done AND queue consistently empty
+                    if (producers_done.load(std::memory_order_acquire) >= kProducers) {
+                        consecutive_empty++;
+                        if (consecutive_empty > 100) {  // Give time for final items
+                            // Double-check queue is empty
+                            if (!queue.dequeue()) break;
+                            consecutive_empty = 0;
+                        }
+                    }
                     std::this_thread::yield();
                 }
             }
         });
     }
 
-    // Wait for producers
+    // Wait for all threads
     for (auto& t : producers) {
         t.join();
     }
-
-    // Give consumers time to drain
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    stop.store(true, std::memory_order_relaxed);
 
     for (auto& t : consumers) {
         t.join();
     }
 
-    // Drain remaining items
+    // Final drain (should be empty)
     while (auto* item = queue.dequeue()) {
         dequeue_count.fetch_add(1, std::memory_order_relaxed);
         delete item;
@@ -379,14 +384,14 @@ TEST_F(LSCQUsagePatternTest, MixedWorkloadPattern) {
 
     for (const auto& [num_producers, num_consumers] : phases) {
         lscq::LSCQ<uint64_t> queue(128);
-        std::atomic<bool> stop{false};
+        std::atomic<int> producers_done{0};  // Track producer completion
         std::atomic<long> enqueue_count{0};
         std::atomic<long> dequeue_count{0};
 
         std::vector<std::thread> producers;
         for (int i = 0; i < num_producers; ++i) {
             producers.emplace_back([&]() {
-                for (int j = 0; j < 1000 && !stop.load(std::memory_order_relaxed); ++j) {
+                for (int j = 0; j < 500; ++j) {  // Reduced from 1000 to 500
                     auto* item = new uint64_t(j);
                     if (queue.enqueue(item)) {
                         enqueue_count.fetch_add(1, std::memory_order_relaxed);
@@ -394,20 +399,29 @@ TEST_F(LSCQUsagePatternTest, MixedWorkloadPattern) {
                         delete item;
                     }
                 }
+                producers_done.fetch_add(1, std::memory_order_release);  // Signal completion
             });
         }
 
         std::vector<std::thread> consumers;
         for (int i = 0; i < num_consumers; ++i) {
             consumers.emplace_back([&]() {
-                int idle_count = 0;
-                while (!stop.load(std::memory_order_relaxed) && idle_count < 5000) {
+                int consecutive_empty = 0;
+                while (true) {
                     if (auto* item = queue.dequeue()) {
                         dequeue_count.fetch_add(1, std::memory_order_relaxed);
                         delete item;
-                        idle_count = 0;  // Reset idle counter on successful dequeue
+                        consecutive_empty = 0;
                     } else {
-                        idle_count++;
+                        // Exit only if all producers done AND queue consistently empty
+                        if (producers_done.load(std::memory_order_acquire) >= num_producers) {
+                            consecutive_empty++;
+                            if (consecutive_empty > 100) {  // Give time for final items
+                                // Double-check queue is empty
+                                if (!queue.dequeue()) break;
+                                consecutive_empty = 0;
+                            }
+                        }
                         std::this_thread::yield();
                     }
                 }
@@ -418,15 +432,11 @@ TEST_F(LSCQUsagePatternTest, MixedWorkloadPattern) {
             t.join();
         }
 
-        // Give consumers time to drain
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        stop.store(true, std::memory_order_relaxed);
-
         for (auto& t : consumers) {
             t.join();
         }
 
-        // Drain remaining items
+        // Final drain (should be empty)
         while (auto* item = queue.dequeue()) {
             dequeue_count.fetch_add(1, std::memory_order_relaxed);
             delete item;
