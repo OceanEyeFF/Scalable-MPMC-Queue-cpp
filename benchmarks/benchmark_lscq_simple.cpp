@@ -100,6 +100,9 @@ BENCHMARK(BM_LSCQ_Simple)
     ->Threads(2)
     ->Threads(4)
     ->Threads(8)
+    ->Threads(12)
+    ->Threads(16)
+    ->Threads(24)
     ->UseRealTime();
 
 BENCHMARK_MAIN();

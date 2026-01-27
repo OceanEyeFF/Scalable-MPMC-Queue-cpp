@@ -33,9 +33,12 @@
 
 namespace lscq_bench {
 
-// Reduced thread counts to avoid hang issues with LSCQ at 12+ threads
-// See BENCHMARK_HANG_ANALYSIS.md for details
-constexpr int kThreadCounts[] = {1, 2, 4, 8};
+// Thread counts for benchmarking
+// Expanded from {1, 2, 4, 8} after confirming LSCQ stability at higher thread counts
+// System: 12C/24T (12 physical cores, 24 hyperthreads)
+// - 16 threads: Tests core oversubscription (exceeds 12 physical cores)
+// - 24 threads: Tests full hyperthread utilization
+constexpr int kThreadCounts[] = {1, 2, 4, 8, 12, 16, 24};
 
 constexpr std::size_t kSharedCapacity = 1u << 18;   // 262,144 (effective capacity)
 constexpr std::size_t kPointerPoolSize = 1u << 20;  // 1,048,576
