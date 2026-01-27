@@ -52,6 +52,7 @@ _deps/
 # Tests / coverage
 Testing/
 coverage/
+coverage_html/
 *.gcda
 *.gcno
 *.gcov

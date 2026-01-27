@@ -199,7 +199,7 @@ static void BM_ObjectPoolTLSv1_Throughput(benchmark::State& state) {
 
     state.SetItemsProcessed(state.iterations() * state.threads() * 2);
 }
-BENCHMARK(BM_ObjectPoolTLSv1_Throughput)->ThreadRange(1, 16);
+BENCHMARK(BM_ObjectPoolTLSv1_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(12)->Threads(16)->Threads(24);
 
 static void BM_ObjectPoolTLSv2_Throughput(benchmark::State& state) {
     static lscq::ObjectPoolTLSv2<Item> pool([] { return new Item(); });
@@ -213,7 +213,7 @@ static void BM_ObjectPoolTLSv2_Throughput(benchmark::State& state) {
 
     state.SetItemsProcessed(state.iterations() * state.threads() * 2);
 }
-BENCHMARK(BM_ObjectPoolTLSv2_Throughput)->ThreadRange(1, 16);
+BENCHMARK(BM_ObjectPoolTLSv2_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(12)->Threads(16)->Threads(24);
 
 static void BM_ObjectPoolTLSv1_BatchGetPut(benchmark::State& state) {
     const std::size_t batch = static_cast<std::size_t>(state.range(0));
