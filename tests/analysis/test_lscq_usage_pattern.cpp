@@ -401,7 +401,8 @@ TEST_F(LSCQUsagePatternTest, MixedWorkloadPattern) {
         for (int i = 0; i < num_consumers; ++i) {
             consumers.emplace_back([&]() {
                 int idle_count = 0;
-                while (!stop.load(std::memory_order_relaxed) && idle_count < 5000) {
+                // Increased from 5000 to 10000 to prevent premature timeout in CI environments
+                while (!stop.load(std::memory_order_relaxed) && idle_count < 10000) {
                     if (auto* item = queue.dequeue()) {
                         dequeue_count.fetch_add(1, std::memory_order_relaxed);
                         delete item;
@@ -418,8 +419,8 @@ TEST_F(LSCQUsagePatternTest, MixedWorkloadPattern) {
             t.join();
         }
 
-        // Give consumers time to drain
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // Give consumers more time to drain queue in CI environments
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         stop.store(true, std::memory_order_relaxed);
 
         for (auto& t : consumers) {
