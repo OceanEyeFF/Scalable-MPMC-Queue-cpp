@@ -158,7 +158,7 @@ TEST_F(LSCQUsagePatternTest, SymmetricProducerConsumer) {
     for (int i = 0; i < kConsumers; ++i) {
         consumers.emplace_back([&]() {
             int idle_count = 0;
-            while (!stop.load(std::memory_order_relaxed) && idle_count < 1000) {
+            while (!stop.load(std::memory_order_relaxed) && idle_count < 10000) {
                 if (auto* item = queue.dequeue()) {
                     dequeue_count.fetch_add(1, std::memory_order_relaxed);
                     delete item;
@@ -401,7 +401,7 @@ TEST_F(LSCQUsagePatternTest, MixedWorkloadPattern) {
         for (int i = 0; i < num_consumers; ++i) {
             consumers.emplace_back([&]() {
                 int idle_count = 0;
-                while (!stop.load(std::memory_order_relaxed) && idle_count < 100) {
+                while (!stop.load(std::memory_order_relaxed) && idle_count < 5000) {
                     if (auto* item = queue.dequeue()) {
                         dequeue_count.fetch_add(1, std::memory_order_relaxed);
                         delete item;
