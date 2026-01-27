@@ -22,13 +22,12 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <shared_mutex>
-#include <thread>
-#include <unordered_map>
-
 #include <lscq/object_pool.hpp>
 #include <lscq/object_pool_map.hpp>
 #include <lscq/object_pool_tls.hpp>
+#include <shared_mutex>
+#include <thread>
+#include <unordered_map>
 
 //=============================================================================
 // 0.1.1 Map Lookup Overhead
@@ -439,17 +438,38 @@ BENCHMARK(BM_ObjectPoolMap_ColdPath)->Threads(1);
 static void BM_ObjectPool_Baseline_Throughput(benchmark::State& state) {
     BM_ObjectPool_Throughput<lscq::ObjectPool<PoolItem>>(state);
 }
-BENCHMARK(BM_ObjectPool_Baseline_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(12)->Threads(16)->Threads(24);
+BENCHMARK(BM_ObjectPool_Baseline_Throughput)
+    ->Threads(1)
+    ->Threads(2)
+    ->Threads(4)
+    ->Threads(8)
+    ->Threads(12)
+    ->Threads(16)
+    ->Threads(24);
 
 static void BM_ObjectPoolTLS_Throughput(benchmark::State& state) {
     BM_ObjectPool_Throughput<lscq::ObjectPoolTLS<PoolItem>>(state);
 }
-BENCHMARK(BM_ObjectPoolTLS_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(12)->Threads(16)->Threads(24);
+BENCHMARK(BM_ObjectPoolTLS_Throughput)
+    ->Threads(1)
+    ->Threads(2)
+    ->Threads(4)
+    ->Threads(8)
+    ->Threads(12)
+    ->Threads(16)
+    ->Threads(24);
 
 static void BM_ObjectPoolMap_Throughput(benchmark::State& state) {
     BM_ObjectPool_Throughput<lscq::ObjectPoolMap<PoolItem>>(state);
 }
-BENCHMARK(BM_ObjectPoolMap_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(12)->Threads(16)->Threads(24);
+BENCHMARK(BM_ObjectPoolMap_Throughput)
+    ->Threads(1)
+    ->Threads(2)
+    ->Threads(4)
+    ->Threads(8)
+    ->Threads(12)
+    ->Threads(16)
+    ->Threads(24);
 
 static void BM_ObjectPool_Baseline_Clear(benchmark::State& state) {
     BM_ObjectPool_Clear<lscq::ObjectPool<PoolItem>>(state);

@@ -10,11 +10,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <numeric>
-#include <vector>
-
 #include <lscq/object_pool_tls.hpp>
 #include <lscq/object_pool_tls_v2.hpp>
+#include <numeric>
+#include <vector>
 
 namespace {
 
@@ -42,8 +41,8 @@ void PublishLatencyStats(benchmark::State& state, std::vector<double>& samples) 
         return;
     }
     std::sort(samples.begin(), samples.end());
-    const double mean = std::accumulate(samples.begin(), samples.end(), 0.0) /
-                        static_cast<double>(samples.size());
+    const double mean =
+        std::accumulate(samples.begin(), samples.end(), 0.0) / static_cast<double>(samples.size());
 
     state.counters["latency_p50_ns"] = Percentile(samples, 50.0) * 1e9;
     state.counters["latency_p90_ns"] = Percentile(samples, 90.0) * 1e9;
@@ -199,7 +198,14 @@ static void BM_ObjectPoolTLSv1_Throughput(benchmark::State& state) {
 
     state.SetItemsProcessed(state.iterations() * state.threads() * 2);
 }
-BENCHMARK(BM_ObjectPoolTLSv1_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(12)->Threads(16)->Threads(24);
+BENCHMARK(BM_ObjectPoolTLSv1_Throughput)
+    ->Threads(1)
+    ->Threads(2)
+    ->Threads(4)
+    ->Threads(8)
+    ->Threads(12)
+    ->Threads(16)
+    ->Threads(24);
 
 static void BM_ObjectPoolTLSv2_Throughput(benchmark::State& state) {
     static lscq::ObjectPoolTLSv2<Item> pool([] { return new Item(); });
@@ -213,7 +219,14 @@ static void BM_ObjectPoolTLSv2_Throughput(benchmark::State& state) {
 
     state.SetItemsProcessed(state.iterations() * state.threads() * 2);
 }
-BENCHMARK(BM_ObjectPoolTLSv2_Throughput)->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(12)->Threads(16)->Threads(24);
+BENCHMARK(BM_ObjectPoolTLSv2_Throughput)
+    ->Threads(1)
+    ->Threads(2)
+    ->Threads(4)
+    ->Threads(8)
+    ->Threads(12)
+    ->Threads(16)
+    ->Threads(24);
 
 static void BM_ObjectPoolTLSv1_BatchGetPut(benchmark::State& state) {
     const std::size_t batch = static_cast<std::size_t>(state.range(0));
