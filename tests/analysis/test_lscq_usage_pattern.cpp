@@ -14,12 +14,12 @@
  */
 
 #include <gtest/gtest.h>
-#include <lscq/lscq.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <lscq/lscq.hpp>
 #include <mutex>
 #include <thread>
 #include <unordered_map>

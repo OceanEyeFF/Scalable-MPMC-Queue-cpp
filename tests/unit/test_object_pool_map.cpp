@@ -151,7 +151,8 @@ TEST(ObjectPoolMapTest, ClearClearsLocalSlotsAndSharedPool) {
     pool.Clear();
     EXPECT_EQ(pool.Size(), 0u);
     EXPECT_EQ(pool.SizeApprox(), 0u);
-    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed), created.load(std::memory_order_relaxed));
+    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed),
+              created.load(std::memory_order_relaxed));
 
     const std::thread::id tid = std::this_thread::get_id();
     std::shared_lock lock(pool.cache_mutex_);
@@ -181,7 +182,8 @@ TEST(ObjectPoolMapTest, DestructorReclaimsCachedAndSharedObjects) {
         EXPECT_EQ(pool.Size(), 2u);
     }
 
-    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed), created.load(std::memory_order_relaxed));
+    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed),
+              created.load(std::memory_order_relaxed));
 }
 
 TEST(ObjectPoolMapTest, ConcurrentRegistrationAndSteadyStateAccess) {
@@ -237,7 +239,8 @@ TEST(ObjectPoolMapTest, ConcurrentRegistrationAndSteadyStateAccess) {
     }
 
     pool.Clear();
-    EXPECT_EQ(Item::destroyed.load(std::memory_order_relaxed), created.load(std::memory_order_relaxed));
+    EXPECT_EQ(Item::destroyed.load(std::memory_order_relaxed),
+              created.load(std::memory_order_relaxed));
     EXPECT_EQ(pool.Size(), 0u);
 }
 

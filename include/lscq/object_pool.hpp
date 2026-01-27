@@ -14,9 +14,8 @@
 
 #include <cstddef>
 #include <functional>
-#include <utility>
-
 #include <lscq/detail/object_pool_core.hpp>
+#include <utility>
 
 namespace lscq {
 
@@ -89,9 +88,7 @@ class ObjectPool : private detail::ObjectPoolCore<T> {
      * @note The returned pointer is owned by the caller and should be returned
      * via `Put()` when no longer needed.
      */
-    pointer Get() {
-        return this->GetShared();
-    }
+    pointer Get() { return this->GetShared(); }
 
     /**
      * @brief Return an object to the pool.
@@ -100,9 +97,7 @@ class ObjectPool : private detail::ObjectPoolCore<T> {
      * The pool takes ownership of the pointer and will delete it on `Clear()` or
      * when the pool itself is destroyed.
      */
-    void Put(pointer obj) {
-        this->PutShared(obj);
-    }
+    void Put(pointer obj) { this->PutShared(obj); }
 
     /**
      * @brief Clear the pool and delete all stored objects.
@@ -114,9 +109,7 @@ class ObjectPool : private detail::ObjectPoolCore<T> {
      * remain safe to call concurrently with Get()/Put() (clearing both shared storage
      * and any per-thread caches with appropriate synchronization).
      */
-    void Clear() {
-        this->ClearShared();
-    }
+    void Clear() { this->ClearShared(); }
 
     /**
      * @brief Get the number of objects currently stored in the pool.
@@ -124,14 +117,10 @@ class ObjectPool : private detail::ObjectPoolCore<T> {
      *
      * @note Under concurrency this value is approximate.
      */
-    std::size_t Size() const {
-        return this->SizeApprox();
-    }
+    std::size_t Size() const { return this->SizeApprox(); }
 
    private:
-    std::size_t CurrentShardIndex() const {
-        return detail::ObjectPoolCore<T>::CurrentShardIndex();
-    }
+    std::size_t CurrentShardIndex() const { return detail::ObjectPoolCore<T>::CurrentShardIndex(); }
 };
 
 }  // namespace lscq

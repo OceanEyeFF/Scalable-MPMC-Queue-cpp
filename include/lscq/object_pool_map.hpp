@@ -17,13 +17,12 @@
 #include <atomic>
 #include <cstddef>
 #include <functional>
+#include <lscq/detail/object_pool_core.hpp>
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
 #include <unordered_map>
 #include <utility>
-
-#include <lscq/detail/object_pool_core.hpp>
 
 namespace lscq {
 
@@ -41,7 +40,8 @@ namespace lscq {
  * Concurrency notes:
  * - Steady state: Get/Put take a shared lock on the per-pool cache map and use an atomic slot.
  * - First-time per-thread registration: Put upgrades to a unique lock to insert a LocalCache entry.
- * - Clear() uses a "closing gate" (closing_ + active_ops_) to safely synchronize with concurrent Get/Put.
+ * - Clear() uses a "closing gate" (closing_ + active_ops_) to safely synchronize with concurrent
+ * Get/Put.
  */
 template <class T>
 class ObjectPoolMap : private detail::ObjectPoolCore<T> {
@@ -69,7 +69,8 @@ class ObjectPoolMap : private detail::ObjectPoolCore<T> {
             std::shared_lock lock(cache_mutex_);
             auto it = caches_.find(tid);
             if (it != caches_.end()) {
-                if (pointer cached = it->second.private_obj.exchange(nullptr, std::memory_order_acq_rel);
+                if (pointer cached =
+                        it->second.private_obj.exchange(nullptr, std::memory_order_acq_rel);
                     cached != nullptr) {
                     return cached;
                 }
@@ -92,10 +93,8 @@ class ObjectPoolMap : private detail::ObjectPoolCore<T> {
             auto it = caches_.find(tid);
             if (it != caches_.end()) {
                 pointer expected = nullptr;
-                if (it->second.private_obj.compare_exchange_strong(expected,
-                                                                   obj,
-                                                                   std::memory_order_acq_rel,
-                                                                   std::memory_order_relaxed)) {
+                if (it->second.private_obj.compare_exchange_strong(
+                        expected, obj, std::memory_order_acq_rel, std::memory_order_relaxed)) {
                     return;
                 }
                 // Slot already occupied: fall back to shared pool.

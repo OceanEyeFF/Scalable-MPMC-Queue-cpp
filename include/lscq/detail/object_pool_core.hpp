@@ -3,11 +3,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <lscq/detail/object_pool_shard.hpp>
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <lscq/detail/object_pool_shard.hpp>
 
 namespace lscq::detail {
 

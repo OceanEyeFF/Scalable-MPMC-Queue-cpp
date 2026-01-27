@@ -18,14 +18,13 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <lscq/object_pool_map.hpp>
+#include <lscq/object_pool_tls.hpp>
+#include <lscq/object_pool_tls_v2.hpp>
 #include <memory>
 #include <random>
 #include <thread>
 #include <vector>
-
-#include <lscq/object_pool_map.hpp>
-#include <lscq/object_pool_tls.hpp>
-#include <lscq/object_pool_tls_v2.hpp>
 
 namespace {
 
@@ -73,8 +72,7 @@ struct TrackedObject {
 
     static void print_stats(const char* label) {
         std::cout << "[" << label << "] created=" << created.load()
-                  << " destroyed=" << destroyed.load()
-                  << " active=" << active.load() << std::endl;
+                  << " destroyed=" << destroyed.load() << " active=" << active.load() << std::endl;
     }
 };
 
@@ -138,7 +136,8 @@ void RunHighConcurrencyStress(const char* pool_name, const StressConfig& config)
 
             barrier.arrive_and_wait();
 
-            for (std::size_t i = 0; i < config.ops_per_thread && !stop.load(std::memory_order_relaxed); ++i) {
+            for (std::size_t i = 0;
+                 i < config.ops_per_thread && !stop.load(std::memory_order_relaxed); ++i) {
                 if (dist(rng) == 0) {
                     // Get operation
                     TrackedObject* obj = pool.Get();
@@ -212,10 +211,8 @@ TEST(ObjectPoolStress, HighConcurrency_TLSv2) {
 }
 
 template <typename PoolType>
-void RunTimedHighLoadStress(const char* pool_name,
-                            std::size_t num_threads,
-                            std::chrono::seconds duration,
-                            bool verbose) {
+void RunTimedHighLoadStress(const char* pool_name, std::size_t num_threads,
+                            std::chrono::seconds duration, bool verbose) {
     TrackedObject::reset();
     StressStats stats;
 
@@ -268,19 +265,17 @@ void RunTimedHighLoadStress(const char* pool_name,
 }
 
 TEST(ObjectPoolStress, TimedHighLoad_TLSv2_8Threads_10s) {
-    RunTimedHighLoadStress<lscq::ObjectPoolTLSv2<TrackedObject>>(
-        "ObjectPoolTLSv2", 8, std::chrono::seconds(10), true);
+    RunTimedHighLoadStress<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2", 8,
+                                                                 std::chrono::seconds(10), true);
 }
 
 TEST(ObjectPoolStress, TimedHighLoad_TLSv2_16Threads_10s) {
-    RunTimedHighLoadStress<lscq::ObjectPoolTLSv2<TrackedObject>>(
-        "ObjectPoolTLSv2", 16, std::chrono::seconds(10), true);
+    RunTimedHighLoadStress<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2", 16,
+                                                                 std::chrono::seconds(10), true);
 }
 
 template <typename PoolType>
-void RunBurstStress(const char* pool_name,
-                    std::size_t num_threads,
-                    std::size_t burst_size,
+void RunBurstStress(const char* pool_name, std::size_t num_threads, std::size_t burst_size,
                     std::size_t bursts_per_thread) {
     TrackedObject::reset();
     StressStats stats;
@@ -344,8 +339,7 @@ void RunBurstStress(const char* pool_name,
 }
 
 TEST(ObjectPoolStress, Burst_TLSv2) {
-    RunBurstStress<lscq::ObjectPoolTLSv2<TrackedObject>>(
-        "ObjectPoolTLSv2", 8, 64, 200);
+    RunBurstStress<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2", 8, 64, 200);
 }
 
 TEST(ObjectPoolStress, Coverage_TLSv2_BatchPaths) {
@@ -449,30 +443,34 @@ void RunLongRunningStability(const char* pool_name, std::chrono::seconds duratio
 }
 
 TEST(ObjectPoolStress, LongRunning_TLS_10s) {
-    RunLongRunningStability<lscq::ObjectPoolTLS<TrackedObject>>("ObjectPoolTLS", std::chrono::seconds(10));
+    RunLongRunningStability<lscq::ObjectPoolTLS<TrackedObject>>("ObjectPoolTLS",
+                                                                std::chrono::seconds(10));
 }
 
 TEST(ObjectPoolStress, LongRunning_Map_10s) {
-    RunLongRunningStability<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", std::chrono::seconds(10));
+    RunLongRunningStability<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap",
+                                                                std::chrono::seconds(10));
 }
 
 TEST(ObjectPoolStress, LongRunning_TLSv2_10s) {
-    RunLongRunningStability<lscq::ObjectPoolTLSv2<TrackedObject>>(
-        "ObjectPoolTLSv2", std::chrono::seconds(10));
+    RunLongRunningStability<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2",
+                                                                  std::chrono::seconds(10));
 }
 
 // Extended long-running tests (60 seconds)
 TEST(ObjectPoolStress, LongRunning_TLS_60s) {
-    RunLongRunningStability<lscq::ObjectPoolTLS<TrackedObject>>("ObjectPoolTLS", std::chrono::seconds(60));
+    RunLongRunningStability<lscq::ObjectPoolTLS<TrackedObject>>("ObjectPoolTLS",
+                                                                std::chrono::seconds(60));
 }
 
 TEST(ObjectPoolStress, LongRunning_Map_60s) {
-    RunLongRunningStability<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", std::chrono::seconds(60));
+    RunLongRunningStability<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap",
+                                                                std::chrono::seconds(60));
 }
 
 TEST(ObjectPoolStress, LongRunning_TLSv2_60s) {
-    RunLongRunningStability<lscq::ObjectPoolTLSv2<TrackedObject>>(
-        "ObjectPoolTLSv2", std::chrono::seconds(60));
+    RunLongRunningStability<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2",
+                                                                  std::chrono::seconds(60));
 }
 
 // ============================================================================
@@ -480,7 +478,8 @@ TEST(ObjectPoolStress, LongRunning_TLSv2_60s) {
 // ============================================================================
 
 template <typename PoolType>
-void RunThreadChurnTest(const char* pool_name, std::size_t num_waves, std::size_t threads_per_wave) {
+void RunThreadChurnTest(const char* pool_name, std::size_t num_waves,
+                        std::size_t threads_per_wave) {
     TrackedObject::reset();
     StressStats stats;
 
@@ -605,16 +604,18 @@ void RunConcurrentClearTest(const char* pool_name, std::chrono::seconds duration
 }
 
 TEST(ObjectPoolStress, ConcurrentClear_TLS) {
-    RunConcurrentClearTest<lscq::ObjectPoolTLS<TrackedObject>>("ObjectPoolTLS", std::chrono::seconds(5));
+    RunConcurrentClearTest<lscq::ObjectPoolTLS<TrackedObject>>("ObjectPoolTLS",
+                                                               std::chrono::seconds(5));
 }
 
 TEST(ObjectPoolStress, ConcurrentClear_Map) {
-    RunConcurrentClearTest<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap", std::chrono::seconds(5));
+    RunConcurrentClearTest<lscq::ObjectPoolMap<TrackedObject>>("ObjectPoolMap",
+                                                               std::chrono::seconds(5));
 }
 
 TEST(ObjectPoolStress, ConcurrentClear_TLSv2) {
-    RunConcurrentClearTest<lscq::ObjectPoolTLSv2<TrackedObject>>(
-        "ObjectPoolTLSv2", std::chrono::seconds(5));
+    RunConcurrentClearTest<lscq::ObjectPoolTLSv2<TrackedObject>>("ObjectPoolTLSv2",
+                                                                 std::chrono::seconds(5));
 }
 
 // ============================================================================

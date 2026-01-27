@@ -43,10 +43,12 @@ TEST(ObjectPoolTLSTest, SingleThreadFastPathHitAndMiss) {
     Tracked::destroyed.store(0u, std::memory_order_relaxed);
 
     std::atomic<std::size_t> created{0};
-    lscq::ObjectPoolTLS<Tracked> pool([&] {
-        created.fetch_add(1, std::memory_order_relaxed);
-        return new Tracked();
-    }, 1);
+    lscq::ObjectPoolTLS<Tracked> pool(
+        [&] {
+            created.fetch_add(1, std::memory_order_relaxed);
+            return new Tracked();
+        },
+        1);
 
     auto& cache = lscq::ObjectPoolTLS<Tracked>::tls_fast_cache_;
     EXPECT_EQ(cache.owner.load(std::memory_order_acquire), nullptr);
@@ -83,7 +85,8 @@ TEST(ObjectPoolTLSTest, SingleThreadFastPathHitAndMiss) {
     // Clear deletes both TLS and shared.
     pool.Clear();
     EXPECT_EQ(pool.Size(), 0u);
-    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed), created.load(std::memory_order_relaxed));
+    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed),
+              created.load(std::memory_order_relaxed));
     EXPECT_EQ(cache.owner.load(std::memory_order_acquire), &pool);
     EXPECT_EQ(cache.private_obj.load(std::memory_order_relaxed), nullptr);
 }
@@ -156,10 +159,12 @@ TEST(ObjectPoolTLSTest, ThreadExitFlushesToSharedAndUnregisters) {
     Tracked::destroyed.store(0u, std::memory_order_relaxed);
 
     std::atomic<std::size_t> created{0};
-    lscq::ObjectPoolTLS<Tracked> pool([&] {
-        created.fetch_add(1, std::memory_order_relaxed);
-        return new Tracked();
-    }, 1);
+    lscq::ObjectPoolTLS<Tracked> pool(
+        [&] {
+            created.fetch_add(1, std::memory_order_relaxed);
+            return new Tracked();
+        },
+        1);
 
     std::thread th([&] {
         Tracked* p = pool.Get();
@@ -168,13 +173,15 @@ TEST(ObjectPoolTLSTest, ThreadExitFlushesToSharedAndUnregisters) {
     });
     th.join();  // includes TLS destructors for that thread
 
-    // The worker thread's TLS slot should have been flushed back to shared storage and unregistered.
+    // The worker thread's TLS slot should have been flushed back to shared storage and
+    // unregistered.
     EXPECT_EQ(pool.registry_.size(), 0u);
     EXPECT_EQ(pool.SizeApprox(), 1u);
 
     pool.Clear();
     EXPECT_EQ(pool.Size(), 0u);
-    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed), created.load(std::memory_order_relaxed));
+    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed),
+              created.load(std::memory_order_relaxed));
 }
 
 TEST(ObjectPoolTLSTest, DestructorClearsTlsSlotAndSharedStorage) {
@@ -182,10 +189,12 @@ TEST(ObjectPoolTLSTest, DestructorClearsTlsSlotAndSharedStorage) {
 
     std::atomic<std::size_t> created{0};
     {
-        lscq::ObjectPoolTLS<Tracked> pool([&] {
-            created.fetch_add(1, std::memory_order_relaxed);
-            return new Tracked();
-        }, 1);
+        lscq::ObjectPoolTLS<Tracked> pool(
+            [&] {
+                created.fetch_add(1, std::memory_order_relaxed);
+                return new Tracked();
+            },
+            1);
 
         Tracked* p0 = pool.Get();
         Tracked* p1 = pool.Get();
@@ -196,7 +205,8 @@ TEST(ObjectPoolTLSTest, DestructorClearsTlsSlotAndSharedStorage) {
         EXPECT_EQ(pool.Size(), 2u);
     }
 
-    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed), created.load(std::memory_order_relaxed));
+    EXPECT_EQ(Tracked::destroyed.load(std::memory_order_relaxed),
+              created.load(std::memory_order_relaxed));
 
     auto& cache = lscq::ObjectPoolTLS<Tracked>::tls_fast_cache_;
     EXPECT_EQ(cache.owner.load(std::memory_order_acquire), nullptr);

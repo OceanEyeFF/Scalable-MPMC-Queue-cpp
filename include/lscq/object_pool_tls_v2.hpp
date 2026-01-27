@@ -25,14 +25,13 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <lscq/detail/numa_utils.hpp>
+#include <lscq/detail/object_pool_core.hpp>
 #include <mutex>
 #include <new>
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <lscq/detail/object_pool_core.hpp>
-#include <lscq/detail/numa_utils.hpp>
 
 #if defined(__clang__)
 #if __has_builtin(__builtin_prefetch)
@@ -69,8 +68,7 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
     static_assert(BatchSize > 0, "BatchSize must be greater than 0");
 
     explicit ObjectPoolTLSv2(
-        Factory factory,
-        std::size_t shard_count = detail::ObjectPoolCore<T>::DefaultShardCount())
+        Factory factory, std::size_t shard_count = detail::ObjectPoolCore<T>::DefaultShardCount())
         : detail::ObjectPoolCore<T>(std::move(factory), shard_count) {}
 
     ObjectPoolTLSv2(const ObjectPoolTLSv2&) = delete;
@@ -145,8 +143,8 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
 
         if (cache.owner.load(std::memory_order_acquire) == this) {
             pointer expected = nullptr;
-            if (cache.fast_slot.compare_exchange_strong(
-                    expected, obj, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            if (cache.fast_slot.compare_exchange_strong(expected, obj, std::memory_order_acq_rel,
+                                                        std::memory_order_relaxed)) {
                 RecordCacheHit(cache);
                 return;
             }
@@ -303,8 +301,8 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
         }
 
         ObjectPoolTLSv2* expected = nullptr;
-        if (!cache.owner.compare_exchange_strong(
-                expected, this, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        if (!cache.owner.compare_exchange_strong(expected, this, std::memory_order_acq_rel,
+                                                 std::memory_order_relaxed)) {
             return;
         }
 
@@ -335,8 +333,8 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
             count = capacity;
         }
         while (count > 0) {
-            if (cache.batch_count.compare_exchange_weak(
-                    count, count - 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            if (cache.batch_count.compare_exchange_weak(count, count - 1, std::memory_order_acq_rel,
+                                                        std::memory_order_acquire)) {
                 pointer p = cache.batch[count - 1].exchange(nullptr, std::memory_order_acq_rel);
                 if (p != nullptr) {
                     return p;
@@ -352,10 +350,9 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
             if (p != nullptr) {
                 std::size_t current = cache.batch_count.load(std::memory_order_acquire);
                 while (current > 0) {
-                    if (cache.batch_count.compare_exchange_weak(current,
-                                                               current - 1,
-                                                               std::memory_order_acq_rel,
-                                                               std::memory_order_acquire)) {
+                    if (cache.batch_count.compare_exchange_weak(current, current - 1,
+                                                                std::memory_order_acq_rel,
+                                                                std::memory_order_acquire)) {
                         break;
                     }
                 }
@@ -382,8 +379,8 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
         }
         if (count < cache.batch.size()) {
             pointer expected = nullptr;
-            if (cache.batch[count].compare_exchange_strong(
-                    expected, obj, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            if (cache.batch[count].compare_exchange_strong(expected, obj, std::memory_order_acq_rel,
+                                                           std::memory_order_relaxed)) {
                 IncrementBatchCount(cache);
                 return true;
             }
@@ -391,8 +388,8 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
 
         for (std::size_t i = 0; i < limit; ++i) {
             pointer expected = nullptr;
-            if (cache.batch[i].compare_exchange_strong(
-                    expected, obj, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            if (cache.batch[i].compare_exchange_strong(expected, obj, std::memory_order_acq_rel,
+                                                       std::memory_order_relaxed)) {
                 IncrementBatchCount(cache);
                 return true;
             }
@@ -536,8 +533,7 @@ class ObjectPoolTLSv2 : private detail::ObjectPoolCore<T> {
             cache.miss_count.fetch_add(1, std::memory_order_relaxed);
         }
 
-        const std::size_t ops =
-            cache.op_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        const std::size_t ops = cache.op_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (ops < kAdaptiveCheckInterval) {
             return;
         }

@@ -8,19 +8,18 @@
 #define private public
 #include <lscq/object_pool.hpp>
 #undef private
-#include <lscq/object_pool_map.hpp>
-#include <lscq/object_pool_tls.hpp>
-
-#include "test_object_pool_suite.hpp"
-
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <lscq/object_pool_map.hpp>
+#include <lscq/object_pool_tls.hpp>
 #include <mutex>
 #include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include "test_object_pool_suite.hpp"
 
 namespace {
 

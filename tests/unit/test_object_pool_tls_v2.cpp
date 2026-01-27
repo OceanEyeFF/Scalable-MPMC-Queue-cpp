@@ -53,8 +53,8 @@ void ResetCache(Cache& cache) {
         }
     }
     cache.batch_count.store(0, std::memory_order_release);
-    cache.effective_batch_size.store(
-        std::max<std::size_t>(1u, cache.batch.size() / 2), std::memory_order_release);
+    cache.effective_batch_size.store(std::max<std::size_t>(1u, cache.batch.size() / 2),
+                                     std::memory_order_release);
     cache.hit_count.store(0, std::memory_order_release);
     cache.miss_count.store(0, std::memory_order_release);
     cache.op_count.store(0, std::memory_order_release);
@@ -70,11 +70,12 @@ TEST(ObjectPoolTLSv2Test, SingleThreadFastSlotBatchAndShared) {
     ResetCache(cache);
 
     std::atomic<std::size_t> created{0};
-    Pool pool([&] {
-        created.fetch_add(1, std::memory_order_relaxed);
-        return new Tracked();
-    },
-              1);
+    Pool pool(
+        [&] {
+            created.fetch_add(1, std::memory_order_relaxed);
+            return new Tracked();
+        },
+        1);
 
     EXPECT_EQ(cache.owner.load(std::memory_order_acquire), nullptr);
     EXPECT_EQ(cache.fast_slot.load(std::memory_order_relaxed), nullptr);

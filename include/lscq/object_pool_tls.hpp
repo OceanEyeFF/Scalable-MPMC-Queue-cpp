@@ -28,12 +28,11 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <lscq/detail/object_pool_core.hpp>
 #include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <lscq/detail/object_pool_core.hpp>
 
 namespace lscq {
 
@@ -55,9 +54,8 @@ class ObjectPoolTLS : private detail::ObjectPoolCore<T> {
     using pointer = T*;
     using Factory = std::function<pointer()>;
 
-    explicit ObjectPoolTLS(
-        Factory factory,
-        std::size_t shard_count = detail::ObjectPoolCore<T>::DefaultShardCount())
+    explicit ObjectPoolTLS(Factory factory,
+                           std::size_t shard_count = detail::ObjectPoolCore<T>::DefaultShardCount())
         : detail::ObjectPoolCore<T>(std::move(factory), shard_count) {}
 
     ObjectPoolTLS(const ObjectPoolTLS&) = delete;
@@ -104,8 +102,8 @@ class ObjectPoolTLS : private detail::ObjectPoolCore<T> {
 
         if (cache.owner.load(std::memory_order_acquire) == this) {
             pointer expected = nullptr;
-            if (cache.private_obj.compare_exchange_strong(
-                    expected, obj, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            if (cache.private_obj.compare_exchange_strong(expected, obj, std::memory_order_acq_rel,
+                                                          std::memory_order_relaxed)) {
                 return;
             }
         }
@@ -199,8 +197,8 @@ class ObjectPoolTLS : private detail::ObjectPoolCore<T> {
         }
 
         ObjectPoolTLS* expected = nullptr;
-        if (!cache.owner.compare_exchange_strong(
-                expected, this, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        if (!cache.owner.compare_exchange_strong(expected, this, std::memory_order_acq_rel,
+                                                 std::memory_order_relaxed)) {
             return;
         }
 
