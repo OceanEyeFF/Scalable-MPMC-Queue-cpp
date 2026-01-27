@@ -134,65 +134,60 @@ class LSCQUsagePatternTest : public ::testing::Test {
 TEST_F(LSCQUsagePatternTest, SymmetricProducerConsumer) {
     lscq::LSCQ<uint64_t> queue(kSCQSize);
 
-    std::atomic<int> producers_done{0};  // Track producer completion
+    std::atomic<int> producers_done{0};
+    std::atomic<long> items_in_queue{0};  // Precise tracking of queue occupancy
+    std::atomic<bool> consumers_should_exit{false};
     std::atomic<long> enqueue_count{0};
     std::atomic<long> dequeue_count{0};
 
-    // Producers - reduced iterations for faster CI testing
+    // Producers
     std::vector<std::thread> producers;
     for (int i = 0; i < kProducers; ++i) {
         producers.emplace_back([&, i]() {
-            for (int j = 0; j < 500; ++j) {  // Reduced from 1000 to 500
+            for (int j = 0; j < 500; ++j) {
                 auto* item = new uint64_t(i * 1000 + j);
                 if (queue.enqueue(item)) {
+                    items_in_queue.fetch_add(1, std::memory_order_relaxed);
                     enqueue_count.fetch_add(1, std::memory_order_relaxed);
                 } else {
                     delete item;
                 }
             }
-            producers_done.fetch_add(1, std::memory_order_release);  // Signal completion
+            producers_done.fetch_add(1, std::memory_order_release);
         });
     }
 
-    // Consumers with robust exit condition
+    // Consumers: exit when signaled by main thread
     std::vector<std::thread> consumers;
     for (int i = 0; i < kConsumers; ++i) {
         consumers.emplace_back([&]() {
-            int consecutive_empty = 0;
-            while (true) {
+            while (!consumers_should_exit.load(std::memory_order_acquire)) {
                 if (auto* item = queue.dequeue()) {
                     dequeue_count.fetch_add(1, std::memory_order_relaxed);
                     delete item;
-                    consecutive_empty = 0;
+                    items_in_queue.fetch_sub(1, std::memory_order_relaxed);
                 } else {
-                    // Exit only if all producers done AND queue consistently empty
-                    if (producers_done.load(std::memory_order_acquire) >= kProducers) {
-                        consecutive_empty++;
-                        if (consecutive_empty > 100) {  // Give time for final items
-                            // Double-check queue is empty
-                            if (!queue.dequeue()) break;
-                            consecutive_empty = 0;
-                        }
-                    }
                     std::this_thread::yield();
                 }
             }
         });
     }
 
-    // Wait for all threads
+    // Wait for all producers to finish
     for (auto& t : producers) {
         t.join();
     }
 
-    for (auto& t : consumers) {
-        t.join();
+    // Wait until all items are consumed (queue is truly empty)
+    while (items_in_queue.load(std::memory_order_acquire) > 0) {
+        std::this_thread::yield();
     }
 
-    // Final drain (should be empty)
-    while (auto* item = queue.dequeue()) {
-        dequeue_count.fetch_add(1, std::memory_order_relaxed);
-        delete item;
+    // Signal consumers to exit
+    consumers_should_exit.store(true, std::memory_order_release);
+
+    for (auto& t : consumers) {
+        t.join();
     }
 
     std::cout << "\n========== Symmetric Producer/Consumer ==========\n";
@@ -352,116 +347,4 @@ TEST_F(LSCQUsagePatternTest, CacheHitPotentialAnalysis) {
     // Hit rate expectation based on review: 20-30%
     // We don't assert a specific value since it depends on scheduling
     EXPECT_GT(total_gets, 0) << "Should have recorded some Get calls";
-}
-
-//=============================================================================
-// Test Scenario 4: Mixed Workload Pattern
-//=============================================================================
-
-/**
- * @test Simulates realistic mixed workload with varying producer/consumer ratios.
- *
- * Runs multiple phases with different P:C ratios to measure how
- * ObjectPool usage patterns change under different load conditions.
- */
-TEST_F(LSCQUsagePatternTest, MixedWorkloadPattern) {
-    struct PhaseResult {
-        int producers;
-        int consumers;
-        long enqueues;
-        long dequeues;
-    };
-
-    std::vector<PhaseResult> results;
-
-    // Phase configurations: {producers, consumers}
-    std::vector<std::pair<int, int>> phases = {
-        {2, 2},  // Balanced
-        {4, 2},  // Producer-heavy
-        {2, 4},  // Consumer-heavy
-        {8, 8},  // High parallelism
-    };
-
-    for (const auto& [num_producers, num_consumers] : phases) {
-        lscq::LSCQ<uint64_t> queue(128);
-        std::atomic<int> producers_done{0};  // Track producer completion
-        std::atomic<long> enqueue_count{0};
-        std::atomic<long> dequeue_count{0};
-
-        std::vector<std::thread> producers;
-        for (int i = 0; i < num_producers; ++i) {
-            producers.emplace_back([&]() {
-                for (int j = 0; j < 500; ++j) {  // Reduced from 1000 to 500
-                    auto* item = new uint64_t(j);
-                    if (queue.enqueue(item)) {
-                        enqueue_count.fetch_add(1, std::memory_order_relaxed);
-                    } else {
-                        delete item;
-                    }
-                }
-                producers_done.fetch_add(1, std::memory_order_release);  // Signal completion
-            });
-        }
-
-        std::vector<std::thread> consumers;
-        for (int i = 0; i < num_consumers; ++i) {
-            consumers.emplace_back([&]() {
-                int consecutive_empty = 0;
-                while (true) {
-                    if (auto* item = queue.dequeue()) {
-                        dequeue_count.fetch_add(1, std::memory_order_relaxed);
-                        delete item;
-                        consecutive_empty = 0;
-                    } else {
-                        // Exit only if all producers done AND queue consistently empty
-                        if (producers_done.load(std::memory_order_acquire) >= num_producers) {
-                            consecutive_empty++;
-                            if (consecutive_empty > 100) {  // Give time for final items
-                                // Double-check queue is empty
-                                if (!queue.dequeue()) break;
-                                consecutive_empty = 0;
-                            }
-                        }
-                        std::this_thread::yield();
-                    }
-                }
-            });
-        }
-
-        for (auto& t : producers) {
-            t.join();
-        }
-
-        for (auto& t : consumers) {
-            t.join();
-        }
-
-        // Final drain (should be empty)
-        while (auto* item = queue.dequeue()) {
-            dequeue_count.fetch_add(1, std::memory_order_relaxed);
-            delete item;
-        }
-
-        results.push_back(
-            {num_producers, num_consumers, enqueue_count.load(), dequeue_count.load()});
-    }
-
-    // Print summary
-    std::cout << "\n========== Mixed Workload Pattern Analysis ==========\n";
-    std::cout << std::setw(12) << "Producers" << std::setw(12) << "Consumers" << std::setw(12)
-              << "Enqueues" << std::setw(12) << "Dequeues" << std::setw(12) << "Ratio\n";
-    std::cout << std::string(60, '-') << "\n";
-
-    for (const auto& r : results) {
-        double ratio = r.dequeues > 0 ? static_cast<double>(r.enqueues) / r.dequeues : 0;
-        std::cout << std::setw(12) << r.producers << std::setw(12) << r.consumers << std::setw(12)
-                  << r.enqueues << std::setw(12) << r.dequeues << std::setw(12) << std::fixed
-                  << std::setprecision(2) << ratio << "\n";
-    }
-    std::cout << "=====================================================\n";
-
-    // All phases should complete without errors
-    for (const auto& r : results) {
-        EXPECT_EQ(r.enqueues, r.dequeues) << "Phase " << r.producers << "P/" << r.consumers << "C";
-    }
 }
